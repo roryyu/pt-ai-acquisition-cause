@@ -1,0 +1,420 @@
+// 归因模块 - Prisma Schema
+// 对应 design.md 全部数据模型（6.4.1 用户与权限 / 6.4.2 语义层 / 6.4.3 任务与报告）
+// 注意：
+// 1. Prisma 7 起 datasource 不再内联 url，数据库连接统一由 prisma.config.ts 提供
+// 2. 所有表/枚举位于 cause schema，须与 .env 中 DATABASE_URL 的 ?schema= 参数保持一致
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../lib/db/generated/client"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["cause"]
+}
+
+// ─── 枚举 ─────────────────────────────────────────────────────────────────────
+
+/// 用户角色：RBAC 基础权限集合（design.md 6.4.1 UserV1.role）
+enum UserRole {
+  admin
+  analyst
+  operator
+  viewer
+
+  @@schema("cause")
+}
+
+/// 权限主体类型：RBAC + ABAC 混合模型（design.md 8.2）
+enum PermissionSubjectType {
+  user
+  role
+  workspace
+
+  @@schema("cause")
+}
+
+/// 权限资源类型
+enum PermissionResourceType {
+  data_source
+  metric
+  report
+  board
+
+  @@schema("cause")
+}
+
+/// 权限动作
+enum PermissionAction {
+  read
+  write
+  admin
+
+  @@schema("cause")
+}
+
+/// 数据源类型（design.md 6.4.2 DataSourceV1.type）
+enum DataSourceType {
+  bi
+  api
+  mcp
+  web
+  browser
+
+  @@schema("cause")
+}
+
+/// 指标状态（design.md 6.4.2 MetricV1.status）
+enum MetricStatus {
+  draft
+  published
+  deprecated
+
+  @@schema("cause")
+}
+
+/// 研究工作流状态机（design.md 4.3.2）
+enum ResearchState {
+  queued
+  planning
+  collecting
+  analyzing
+  verifying
+  writing
+  reviewing
+  completed
+  failed
+
+  @@schema("cause")
+}
+
+/// Agent 类型（design.md 4.3.1）
+enum AgentType {
+  supervisor
+  data_analyst
+  researcher
+  critic
+
+  @@schema("cause")
+}
+
+/// 洞察画布文档类型：整合原 报告/看板/日报 三模块
+enum InsightDocKind {
+  report
+  board
+  digest
+
+  @@schema("cause")
+}
+
+/// 洞察文档状态
+enum InsightDocStatus {
+  draft
+  published
+  archived
+
+  @@schema("cause")
+}
+
+/// 画布实时绑定来源类型：问答 / 深度研究 / 指标
+enum BindingSourceType {
+  question
+  research
+  metric
+
+  @@schema("cause")
+}
+
+/// 定时任务动作：发邮件 / 导出图片
+enum ScheduleAction {
+  email
+  export
+
+  @@schema("cause")
+}
+
+/// 投递渠道
+enum DeliveryChannelType {
+  email
+  image
+
+  @@schema("cause")
+}
+
+/// 投递状态
+enum DeliveryStatus {
+  queued
+  sent
+  failed
+
+  @@schema("cause")
+}
+
+/// 审计动作类型
+enum AuditAction {
+  create
+  read
+  update
+  delete
+  query
+  export
+  login
+  logout
+
+  @@schema("cause")
+}
+
+// ─── 用户与权限（design.md 6.4.1）───────────────────────────────────────────────
+
+/// 用户表：对应 UserV1
+model User {
+  id           String   @id // user_xxx
+  email        String   @unique
+  name         String
+  departmentId String?  @map("department_id")
+  role         UserRole @default(viewer)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspaces    Workspace[]
+  questions     Question[]
+  insights      InsightDoc[]
+  auditLogs     AuditLog[]
+
+  @@schema("cause")
+  @@map("users")
+}
+
+/// 工作区表：对应 WorkspaceV1
+model Workspace {
+  id            String   @id // workspace_xxx
+  name          String
+  ownerId       String   @map("owner_id")
+  dataSourceIds String[] @default([])
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  owner     User       @relation(fields: [ownerId], references: [id])
+  questions Question[]
+  insights  InsightDoc[]
+
+  @@schema("cause")
+  @@map("workspaces")
+}
+
+/// 权限表：对应 PermissionV1
+model Permission {
+  id           String                 @id
+  subjectType  PermissionSubjectType  @map("subject_type")
+  subjectId    String                 @map("subject_id")
+  resourceType PermissionResourceType @map("resource_type")
+  resourceId   String                 @map("resource_id")
+  action       PermissionAction
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@schema("cause")
+  @@map("permissions")
+}
+
+// ─── 语义层（design.md 6.4.2）───────────────────────────────────────────────────
+
+/// 数据源表：对应 DataSourceV1
+model DataSource {
+  id          String         @id // data_source_xxx
+  name        String
+  type        DataSourceType
+  config      Json           @default("{}")
+  connectorId String         @map("connector_id")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  semanticModels SemanticModel[]
+  metrics        Metric[]
+
+  @@schema("cause")
+  @@map("data_sources")
+}
+
+/// 指标表：对应 MetricV1
+model Metric {
+  id            String       @id // metric_xxx
+  name          String
+  description   String       @default("")
+  formula       String       @default("")
+  unit          String?
+  ownerId       String       @map("owner_id")
+  status        MetricStatus @default(draft)
+  version       Int          @default(1)
+  dataSourceId  String?      @map("data_source_id")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id])
+
+  @@schema("cause")
+  @@map("metrics")
+}
+
+/// 语义模型表：对应 SemanticModelV1
+/// dataSourceId 为空表示内置演示经营库（data_source_demo_pg）
+model SemanticModel {
+  id           String   @id // semantic_model_xxx
+  name         String
+  dataSourceId String?  @map("data_source_id")
+  tableRef     String   @map("table_ref")
+  fields       Json     @default("[]")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id])
+
+  @@schema("cause")
+  @@map("semantic_models")
+}
+
+// ─── 任务与报告（design.md 6.4.3）───────────────────────────────────────────────
+
+/// 问答表：对应 QuestionV1
+model Question {
+  id          String        @id // question_xxx
+  userId      String        @map("user_id")
+  workspaceId String?       @map("workspace_id")
+  content     String
+  context     Json?
+  status      ResearchState @default(queued)
+  answer      Json?
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user          User?           @relation(fields: [userId], references: [id])
+  workspace     Workspace?      @relation(fields: [workspaceId], references: [id])
+  researchTasks ResearchTask[]
+
+  @@schema("cause")
+  @@map("questions")
+}
+
+/// 研究任务表：对应 ResearchTaskV1
+model ResearchTask {
+  id           String        @id // task_xxx
+  questionId   String        @map("question_id")
+  parentTaskId String?       @map("parent_task_id")
+  agentType    AgentType     @default(supervisor)
+  status       ResearchState @default(queued)
+  input        Json?
+  output       Json?
+  citations    Json?
+  startedAt    DateTime?     @map("started_at") @db.Timestamptz(3)
+  completedAt  DateTime?     @map("completed_at") @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@schema("cause")
+  @@map("research_tasks")
+}
+
+// ─── 洞察画布（整合报告/看板/日报）────────────────────────────────────────────
+
+/// 洞察画布文档：统一承载报告/看板/日报，snapshot 存 tldraw store 快照
+model InsightDoc {
+  id          String           @id // insight_xxx
+  title       String
+  kind        InsightDocKind   @default(report)
+  description String           @default("")
+  snapshot    Json             @default("{}") // tldraw loadSnapshot 可还原的 store 快照
+  status      InsightDocStatus @default(draft)
+  createdBy   String           @map("created_by")
+  workspaceId String?          @map("workspace_id")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator    User            @relation(fields: [createdBy], references: [id])
+  workspace  Workspace?      @relation(fields: [workspaceId], references: [id])
+  bindings   CanvasBinding[]
+  schedules  ScheduleJob[]
+  deliveries DeliveryRecord[]
+
+  @@schema("cause")
+  @@map("insight_docs")
+}
+
+/// 画布实时绑定：形状与数据源（问答/研究/指标）的关联，payload 存最新内容
+model CanvasBinding {
+  id           String            @id // binding_xxx
+  docId        String            @map("doc_id")
+  shapeId      String            @map("shape_id") // 画布上对应形状 id
+  sourceType   BindingSourceType @map("source_type")
+  sourceId     String?           @map("source_id") // question_xxx / task_xxx
+  query        Json?             // 预留：按需查询的重跑参数
+  payload      Json              @default("{}") // ChartSpec / 指标值 / markdown / 引用
+  sourceStatus String            @default("unknown") // 源任务状态：running/completed/failed...
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  doc InsightDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@schema("cause")
+  @@map("canvas_bindings")
+  @@index([docId])
+}
+
+/// 定时任务：对指定洞察文档执行 发邮件 / 导出图片
+model ScheduleJob {
+  id         String         @id // schedule_xxx
+  docId      String         @map("doc_id")
+  action     ScheduleAction @default(email)
+  cronExpr   String         @map("cron_expr") // 标准 5 段 cron 表达式
+  recipients Json           @default("[]")
+  enabled    Boolean        @default(true)
+  lastRunAt  DateTime?      @map("last_run_at") @db.Timestamptz(3)
+  nextRunAt  DateTime?      @map("next_run_at") @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  doc InsightDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@schema("cause")
+  @@map("schedule_jobs")
+  @@index([enabled, nextRunAt])
+}
+
+/// 投递记录：邮件/图片投递的执行流水
+model DeliveryRecord {
+  id        String              @id // delivery_xxx
+  docId     String              @map("doc_id")
+  channel   DeliveryChannelType
+  status    DeliveryStatus      @default(queued)
+  detail    Json?               // 收件人/文件路径/mock 标记/错误信息
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  doc InsightDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@schema("cause")
+  @@map("delivery_records")
+  @@index([docId])
+}
+
+// ─── 审计日志（design.md 8.3）─────────────────────────────────────────────────────
+
+/// 审计日志表
+model AuditLog {
+  id         String      @id // audit_xxx
+  userId     String?     @map("user_id")
+  action     AuditAction
+  resource   String // 资源类型
+  resourceId String?     @map("resource_id")
+  detail     Json?
+  ip         String?
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@schema("cause")
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+}

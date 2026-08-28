@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/* ─── 设计系统 CSS 变量（项目规范 5.2–5.7）─── */
+:root {
+  /* 管理模式色板 */
+  --paper: #f7f6f3;
+  --surface: #fffefa;
+  --ink: #211a36;
+  --ink-soft: #4a4358;
+  --muted: #706b79;
+  --line: #ddd9e2;
+  --purple: #523b8f;
+  --purple-pale: #f0edf7;
+  --warning: #875600;
+  --warning-pale: #fff4d5;
+  --danger: #9b3141;
+  --danger-pale: #fff0f2;
+  --success: #176e53;
+  --success-pale: #e9f6ef;
+
+  /* 缓动函数 */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 圆角 */
+  --radius-sm: 10px;
+  --radius: 18px;
+
+  /* 侧边栏 */
+  --sidebar-w: 238px;
+}
+
+/* ─── 基础重置 ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Noto Sans CJK SC", system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+/* ─── 无障碍：焦点环 ─── */
+:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--purple) 35%, transparent);
+  outline-offset: 2px;
+}
+
+/* ─── 无障碍：减少动画 ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ─── 屏幕阅读器专用 ─── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─── 状态指示灯 ─── */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-dot--success { background: var(--success); box-shadow: 0 0 0 4px color-mix(in oklch, var(--success) 14%, transparent); }
+.status-dot--warning { background: var(--warning); box-shadow: 0 0 0 4px color-mix(in oklch, var(--warning) 14%, transparent); }
+.status-dot--danger  { background: var(--danger);  box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger) 14%, transparent); }
+.status-dot--default { background: #9992a4; box-shadow: 0 0 0 4px color-mix(in oklch, #9992a4 14%, transparent); }
+
+/* ─── 等宽数字（统计面板） ─── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 流式等待：跳动小球加载动画 ─── */
+.thinking-ball {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
+  height: 28px;
+}
+/* 小球：弹跳 + 落地压扁（squash & stretch），高光渐变增加灵动感 */
+.thinking-ball::before {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, color-mix(in oklch, var(--purple) 55%, #fff), var(--purple));
+  transform-origin: center bottom;
+  animation: thinking-ball-bounce 0.9s infinite;
+}
+/* 地面投影：随弹跳同步缩放、淡入淡出 */
+.thinking-ball::after {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  left: 0;
+  width: 12px;
+  height: 3px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--purple) 35%, transparent);
+  animation: thinking-ball-shadow 0.9s infinite;
+}
+@keyframes thinking-ball-bounce {
+  0%, 100% {
+    /* 触地瞬间压扁，ease-out 快速弹起 */
+    transform: translateY(0) scale(1.25, 0.78);
+    animation-timing-function: cubic-bezier(0.3, 0.4, 0.5, 1);
+  }
+  50% {
+    /* 顶点纵向拉伸，ease-in 加速下落 */
+    transform: translateY(-13px) scale(0.92, 1.08);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.6);
+  }
+}
+@keyframes thinking-ball-shadow {
+  0%, 100% {
+    transform: scaleX(1);
+    opacity: 0.5;
+    animation-timing-function: cubic-bezier(0.3, 0.4, 0.5, 1);
+  }
+  50% {
+    transform: scaleX(0.55);
+    opacity: 0.18;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.6);
+  }
+}
+
+/* ─── 滚动条美化 ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--muted) 30%, transparent); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); }

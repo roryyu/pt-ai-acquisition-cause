@@ -1,0 +1,48 @@
+# 本地开发基础设施（npm run local:up，design.md 10.2）
+# PostgreSQL + pgvector / Redis / MinIO 对象存储
+# 注：如已使用本机自装 PostgreSQL（.env 的 DATABASE_URL），可删除 postgres 服务
+services:
+  postgres:
+    # 官方 pgvector 镜像，内置向量扩展（design.md 6.1）
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: insight
+      POSTGRES_PASSWORD: insight
+      POSTGRES_DB: insight
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insight -d insight"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    # 会话缓存、限流、任务状态锁（design.md 6.3）
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    # S3 兼容对象存储（design.md 6.3）
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: insight
+      MINIO_ROOT_PASSWORD: insight-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

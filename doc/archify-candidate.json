@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "流量投放效果归因平台 · 业务数据流程图",
+    "viewBox": [1200, 900],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ask-data-path",
+        "label": "问答·数据分析路径",
+        "focus": ["frontend", "ask_api", "supervisor", "data_analyst", "semantic_ops", "synthesizer"],
+        "note": "用户提问经 Supervisor 三分类路由到 DataAnalyst，语义层执行查询，Synthesizer 汇聚后流式返回。"
+      },
+      {
+        "id": "ask-research-path",
+        "label": "问答·轻量研究路径",
+        "focus": ["frontend", "ask_api", "supervisor", "research_worker", "critic", "synthesizer"],
+        "note": "Supervisor 路由到 ResearchWorker，检索抓取后经 Critic 硬+软校验，不达标重试≤1次，通过后 Synthesizer 综合。"
+      },
+      {
+        "id": "deep-research-path",
+        "label": "深度研究路径",
+        "focus": ["frontend", "research_api", "deep_research", "connectors"],
+        "note": "/research 走独立深度研究引擎：Planner 拆解→Executor 逐子问题检索深读→Compare 多源比对→流式报告。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "入口" },
+    { "label": "API 网关" },
+    { "label": "Agent 执行" },
+    { "label": "核心能力" },
+    { "label": "基础设施" }
+  ],
+  "nodes": [
+    { "id": "frontend", "type": "frontend", "label": "前端应用", "sublabel": "问答 / 研究 / 算子中心", "stage": 0, "row": 1, "tag": "Next.js 16" },
+    { "id": "ask_api", "type": "backend", "label": "/ask 任务问答", "sublabel": "SSE 流式 · 多轮追问", "stage": 1, "row": 0, "tag": "POST" },
+    { "id": "research_api", "type": "backend", "label": "/research 深度研究", "sublabel": "SSE 流式 · 子任务追踪", "stage": 1, "row": 2, "tag": "POST" },
+    { "id": "supervisor", "type": "backend", "label": "Supervisor 编排", "sublabel": "三分类路由·direct 直接流式", "stage": 2, "row": 0, "tag": "LangGraph" },
+    { "id": "data_analyst", "type": "backend", "label": "DataAnalyst", "sublabel": "ReAct · 5 工具 · temp=0", "stage": 2, "row": 1, "tag": "算子优先" },
+    { "id": "research_worker", "type": "backend", "label": "ResearchWorker", "sublabel": "ReAct · 检索抓取 · temp=0.2", "stage": 2, "row": 2, "tag": "兜底转正" },
+    { "id": "deep_research", "type": "backend", "label": "深度研究引擎", "sublabel": "Planner→Executor→Compare→报告", "stage": 2, "row": 3, "tag": "maxDuration 600s", "width": 160 },
+    { "id": "semantic_ops", "type": "backend", "label": "语义与算子层", "sublabel": "NL2SQL + 12 算子", "stage": 3, "row": 0, "tag": "Zod 校验" },
+    { "id": "synthesizer", "type": "backend", "label": "Synthesizer 综合", "sublabel": "汇聚产出·流式返回", "stage": 3, "row": 1, "tag": "含原始SQL" },
+    { "id": "critic", "type": "security", "label": "Critic 校验", "sublabel": "硬校验+软校验·不达标重试≤1", "stage": 3, "row": 2, "tag": "evidence≥2" },
+    { "id": "connectors", "type": "cloud", "label": "数据连接器", "sublabel": "PG / Web / API / MCP", "stage": 3, "row": 3, "tag": "只读护栏" },
+    { "id": "model_gateway", "type": "cloud", "label": "统一模型网关", "sublabel": "主备降级 · 5min 熔断", "stage": 4, "row": 0, "tag": "OpenAI 协议" },
+    { "id": "persistence", "type": "database", "label": "数据持久化", "sublabel": "question / research_tasks", "stage": 4, "row": 2, "tag": "PG + Prisma" }
+  ],
+  "flows": [
+    { "id": "f1", "from": "frontend", "to": "ask_api", "label": "提问", "variant": "emphasis" },
+    { "id": "f2", "from": "frontend", "to": "research_api", "label": "研究任务", "variant": "emphasis" },
+    { "id": "f3", "from": "ask_api", "to": "supervisor", "label": "问题 + 历史", "route": "straight" },
+    { "id": "f4", "from": "research_api", "to": "deep_research", "label": "研究问题", "fromSide": "right", "toSide": "left", "via": [[430, 385], [430, 499]], "labelAt": [410, 440] },
+    { "id": "f5", "from": "supervisor", "to": "data_analyst", "label": "data_analysis", "route": "straight", "labelAt": [570, 225] },
+    { "id": "f6", "from": "supervisor", "to": "research_worker", "label": "research", "fromSide": "bottom", "toSide": "left", "via": [[445, 186], [445, 385]], "labelAt": [460, 314] },
+    { "id": "f7", "from": "data_analyst", "to": "semantic_ops", "label": "NL2SQL + 算子", "fromSide": "top", "toSide": "left", "via": [[510, 242], [510, 200], [689, 200], [689, 157]], "labelAt": [650, 215] },
+    { "id": "f8", "from": "data_analyst", "to": "synthesizer", "label": "数据 + 图表", "route": "straight", "labelAt": [637, 258] },
+    { "id": "f9", "from": "research_worker", "to": "connectors", "label": "检索抓取", "fromSide": "bottom", "toSide": "top", "via": [[530, 430], [745, 430], [745, 470]], "labelAt": [640, 418] },
+    { "id": "f10", "from": "research_worker", "to": "critic", "label": "发现 + 引用", "variant": "security", "route": "straight", "labelAt": [637, 372] },
+    { "id": "f11", "from": "semantic_ops", "to": "connectors", "label": "只读 SQL 执行", "fromSide": "right", "toSide": "right", "via": [[850, 157], [850, 499]], "labelAt": [862, 328] },
+    { "id": "f12", "from": "critic", "to": "synthesizer", "label": "通过校验", "variant": "security", "fromSide": "top", "toSide": "left", "via": [[745, 320], [689, 320], [689, 271]], "labelAt": [717, 340] },
+    { "id": "f13", "from": "deep_research", "to": "connectors", "label": "多轮检索+深读+比对", "route": "straight", "labelAt": [640, 542] }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "两条研究路径互补",
+      "items": [
+        "/ask → Supervisor 三分类：direct（直接流式）/ data_analysis / research（轻量研究+ Critic）",
+        "/research → 独立深度研究引擎：Planner 拆解→逐子问题检索深读→多源比对→正式报告",
+        "DataAnalyst 不经过 Critic，直接到 Synthesizer；ResearchWorker 必须经 Critic 校验"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "质量与安全护栏",
+      "items": [
+        "Critic 先硬校验（证据≥2条+引用≥1个）再 LLM 软校验（覆盖度/一致性），不达标重试≤1次",
+        "SQL 仅允许 SELECT/WITH，白名单校验禁止写操作，标识符与字符串净化防注入",
+        "ResearchWorker 兜底：模型未主动 record_finding 但已有搜索证据时，自动将搜索摘要转正为发现"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "语义统一与算子化",
+      "items": [
+        "语义模型定义一次，NL2SQL 转译、Agent 数据字典、人工试运行三处同源",
+        "12 算子 = 6 数据分析算子(SQL引擎) + 6 研究算子(LLM引擎)，算子优先原则",
+        "所有 LLM 调用经统一模型网关主备降级，5 分钟熔断冷却，结果持久化可回溯"
+      ]
+    }
+  ]
+}

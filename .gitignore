@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# Next.js 构建产物
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# 测试覆盖率
+coverage/
+
+# 环境变量（.env.example 保留入库，其余忽略）
+.env
+.env.local
+.env*.local
+
+# 系统与编辑器
+.DS_Store
+*.log
+
+# Prisma 生成客户端（npm install 时经 postinstall 自动生成，无需入库）
+lib/db/generated/
+# Prisma 本地迁移调试产物
+prisma/dev.db*
+
+# 洞察画布运行时产物：邮件落盘 mock 与导出 PNG 存档
+.deliveries/
+public/exports/
