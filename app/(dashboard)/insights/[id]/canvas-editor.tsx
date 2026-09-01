@@ -4,7 +4,8 @@
  * 洞察画布编辑器（重组件，含 tldraw）：由 ./client 经 next/dynamic 懒加载，
  * 避免 tldraw 大体积依赖阻塞路由切换与页面首屏。
  * tldraw 画布 + 实时绑定形状 + 导入面板 + 导出/邮件/定时任务动作
- * - 加载时还原 snapshot，编辑防抖 1.5s 后 PUT 保存
+ * - 加载时还原 snapshot（兼容编辑器快照 {document,session} 与脚本产出的扁平 {store,schema}），
+ *   编辑防抖 1.5s 后 PUT 保存，保存失败显式提示，卸载/刷新前冲刷防抖窗口内的改动
  * - 每 10s 轮询 bindings（运行中的源刷新内容）并按 shapeId 回填形状 props
  * - 导出 PNG：editor.toImage 生成 Blob，浏览器下载 + POST 存档
  * - 邮件发送 / 定时任务走 delivery / schedules API
@@ -27,6 +28,7 @@ import {
   DefaultMainMenuContent,
   type Editor,
   type TLShapeId,
+  type TLEditorSnapshot,
   type TLStoreSnapshot,
 } from "tldraw";
 import {
@@ -49,17 +51,26 @@ const SAVE_DEBOUNCE_MS = 1500;
 /** 绑定轮询间隔（毫秒） */
 const POLL_INTERVAL_MS = 10_000;
 
+/** snapshot 的 store 段是否为 tldraw 可加载的完整结构（含 schema、store 为 map 形式） */
+function hasValidStoreSegment(part: unknown): boolean {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return false;
+  const { store, schema } = part as { store?: unknown; schema?: unknown };
+  if (!schema || typeof schema !== "object") return false;
+  // 早期迁移脚本产出的 store 为数组，交给 loadSnapshot 会在 upgradeSchema 抛 TypeError
+  return !!store && typeof store === "object" && !Array.isArray(store);
+}
+
 /**
- * 校验 snapshot 是否具备 tldraw 可加载的完整结构（schema + map 形式 store）。
- * 迁移脚本早期版本生成的 snapshot 缺少 schema 字段且 store 为数组，
- * 传给 loadSnapshot 会触发 upgradeSchema TypeError，此处拦截。
+ * 校验 snapshot 是否具备 tldraw 可加载的完整结构，兼容两种落盘格式：
+ * - 编辑器快照 `{ document: { store, schema }, session }`：tldraw v3+ `getSnapshot(store)` 的产物，
+ *   即画布自动保存写入数据库的实际格式
+ * - 扁平 store 快照 `{ store, schema }`：migrate-insights / repair-snapshots 脚本的产物
+ * 两者 `<Tldraw snapshot>` 都能加载（TLEditorSnapshot | TLStoreSnapshot）。
  */
-function isValidTldrawSnapshot(s: TLStoreSnapshot | null | undefined): s is TLStoreSnapshot {
-  if (!s) return false;
-  const obj = s as { schema?: unknown; store?: unknown };
-  if (!obj.schema || typeof obj.schema !== "object") return false;
-  if (!obj.store || typeof obj.store !== "object" || Array.isArray(obj.store)) return false;
-  return true;
+function isValidTldrawSnapshot(s: unknown): s is TLStoreSnapshot | TLEditorSnapshot {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+  const obj = s as Record<string, unknown>;
+  return hasValidStoreSegment(obj) || hasValidStoreSegment(obj.document);
 }
 
 interface DocMeta {
@@ -133,6 +144,8 @@ export function InsightsDetailEditor({
 
   const editorRef = useRef<Editor | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 是否有未落盘的改动：防抖窗口内的编辑需在卸载/刷新前冲刷一次 */
+  const dirtyRef = useRef(false);
   /** 深链导入只消费一次（防 StrictMode 双调用与重复触发） */
   const importConsumed = useRef(false);
 
@@ -141,26 +154,64 @@ export function InsightsDetailEditor({
     window.setTimeout(() => setNotice(""), 3200);
   }, []);
 
+  /** 立即 PUT 画布快照，返回是否真正落盘成功 */
+  const persistSnapshot = useCallback(async () => {
+    const ed = editorRef.current;
+    if (!ed) return false;
+    dirtyRef.current = false;
+    setSaveState("saving");
+    try {
+      const res = await fetch(`/api/v1/insights/${docId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        // keepalive：页面刷新/关闭时浏览器仍会送出该请求
+        keepalive: true,
+        body: JSON.stringify({ snapshot: getSnapshot(ed.store) }),
+      });
+      const json = await res.json().catch(() => null);
+      // HTTP 200 但业务失败（如快照超限）同样视为未保存，避免“已保存”误提示
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error?.message ?? `保存失败（HTTP ${res.status}）`);
+      }
+      setSaveState("idle");
+      return true;
+    } catch (error) {
+      dirtyRef.current = true;
+      setSaveState("dirty");
+      notify(error instanceof Error ? error.message : "保存失败，内容仅保留在当前页面");
+      return false;
+    }
+  }, [docId, notify]);
+
   /** 防抖保存画布快照 */
   const scheduleSave = useCallback(() => {
+    dirtyRef.current = true;
     setSaveState("dirty");
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      const ed = editorRef.current;
-      if (!ed) return;
-      setSaveState("saving");
-      try {
-        await fetch(`/api/v1/insights/${docId}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ snapshot: getSnapshot(ed.store) }),
-        });
-        setSaveState("idle");
-      } catch {
-        setSaveState("dirty");
-      }
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void persistSnapshot();
     }, SAVE_DEBOUNCE_MS);
-  }, [docId]);
+  }, [persistSnapshot]);
+
+  // 组件卸载（站内返回/切换画布）与页面刷新前，冲刷防抖窗口内的最后一次编辑
+  useEffect(() => {
+    const flush = () => {
+      if (!dirtyRef.current) return;
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      void persistSnapshot();
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      flush();
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    };
+  }, [persistSnapshot]);
 
   // 初始加载文档（含 snapshot）与定时任务列表
   useEffect(() => {
@@ -195,19 +246,29 @@ export function InsightsDetailEditor({
     const ed = editorRef.current;
     if (!ed || !b.shapeId) return;
     const shapeId = b.shapeId as TLShapeId;
-    if (!ed.store.has(shapeId)) return;
-    ed.updateShape({
-      id: shapeId,
-      type: "live-content",
-      props: {
-        bindingId: b.id,
-        sourceType: b.sourceType,
-        sourceId: b.sourceId ?? "",
-        payload: b.payload,
-        sourceStatus: b.sourceStatus,
-        updatedAt: b.updatedAt,
-      },
-    });
+    const shape = ed.getShape(shapeId);
+    if (!shape) return;
+    const next = {
+      bindingId: b.id,
+      sourceType: b.sourceType,
+      sourceId: b.sourceId ?? "",
+      payload: b.payload,
+      sourceStatus: b.sourceStatus,
+      updatedAt: b.updatedAt,
+    };
+    const cur = shape.props as Partial<typeof next>;
+    // 轮询每 10s 回填一次：内容未变则跳过，否则会把快照刷成“脏”并反复覆盖写入
+    if (
+      cur.bindingId === next.bindingId &&
+      cur.sourceType === next.sourceType &&
+      cur.sourceId === next.sourceId &&
+      cur.sourceStatus === next.sourceStatus &&
+      cur.updatedAt === next.updatedAt &&
+      JSON.stringify(cur.payload ?? null) === JSON.stringify(next.payload ?? null)
+    ) {
+      return;
+    }
+    ed.updateShape({ id: shapeId, type: "live-content", props: next });
   }, []);
 
   // 编辑器挂载：snapshot 由组件 prop 直接还原，此处注册用户编辑监听：
@@ -257,6 +318,15 @@ export function InsightsDetailEditor({
       clearInterval(timer);
     };
   }, [editor, docId, applyBinding]);
+
+  /** 手动保存：跳过防抖立即落盘 */
+  const handleSaveNow = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    void persistSnapshot();
+  }, [persistSnapshot]);
 
   /** 导入来源：创建实时形状 → 建立绑定 → 回填 payload */
   const handleImport = useCallback(
@@ -492,7 +562,7 @@ export function InsightsDetailEditor({
           {saveState === "saving" ? "保存中..." : saveState === "dirty" ? "待保存" : "已保存"}
         </span>
         <button
-          onClick={scheduleSave}
+          onClick={handleSaveNow}
           disabled={saveState === "idle"}
           className="flex items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-xs disabled:opacity-40"
           style={{ borderColor: "var(--line)", color: "var(--ink-soft)" }}

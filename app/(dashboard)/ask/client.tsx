@@ -254,6 +254,12 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
 
   const showingLive = streaming || (!viewing && state.steps.length > 0);
 
+  /**
+   * 流入目标问答 ID（加入画布 / 进行深入研究共用）：
+   * 历史回看取左侧选中项，实时流取已落库的 questionId
+   */
+  const bridgeQuestionId = currentQuestionId ?? state.questionId;
+
   return (
     <div className="flex h-[calc(100vh-140px)] gap-5">
       {/* ── 左侧：历史 ── */}
@@ -406,32 +412,27 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
               )}
               <CitationList citations={state.citations} />
               {state.done && state.elapsedMs !== null && (
-                <div className="flex items-center justify-center gap-3">
-                  <p className="text-xs" style={{ color: "var(--muted)" }}>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <p className="mr-1 text-xs" style={{ color: "var(--muted)" }}>
                     完成 · 耗时 {(state.elapsedMs / 1000).toFixed(1)}s
                   </p>
-                  {/* 问答→画布流入入口：完成且已落库后可编辑入画布 */}
-                  {state.questionId && !state.error && (
-                    <button
-                      onClick={() => {
-                        setCurrentQuestionId(state.questionId);
-                        setAddToCanvasOpen(true);
-                      }}
-                      className="flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:bg-black/[0.03]"
-                      style={{ borderColor: "var(--line)", color: "var(--purple)" }}
-                    >
-                      <PenTool size={10} /> 加入画布
-                    </button>
-                  )}
-                  {/* 问答→深度研究链路：携带本轮结果作为研究背景跳转 */}
-                  {state.questionId && !state.error && (
-                    <button
-                      onClick={() => router.push(`/research?fromQuestion=${state.questionId}`)}
-                      className="flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:bg-black/[0.03]"
-                      style={{ borderColor: "var(--line)", color: "var(--purple)" }}
-                    >
-                      <Telescope size={10} /> 进行深入研究
-                    </button>
+                  {/* 问答→画布 / 问答→深度研究流入入口：完成且已落库后可流入 */}
+                  {bridgeQuestionId && !state.error && (
+                    <>
+                      <BridgePill
+                        icon={PenTool}
+                        label="加入画布"
+                        title="把本次问答编入洞察画布"
+                        onClick={() => setAddToCanvasOpen(true)}
+                      />
+                      <BridgePill
+                        icon={Telescope}
+                        label="进行深入研究"
+                        title="以本次问答结论作为研究背景，前往深度研究补充研究方向"
+                        primary
+                        onClick={() => router.push(`/research?fromQuestion=${bridgeQuestionId}`)}
+                      />
+                    </>
                   )}
                 </div>
               )}
@@ -442,28 +443,26 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
           {viewing && !showingLive && (
             <div className="mx-auto max-w-3xl space-y-4">
               <QuestionBubble question={viewing.question} />
-              <div className="flex items-center justify-between gap-2">
+              {/* 详情头部：左侧路由/耗时元信息，右侧成组的流入操作 */}
+              <div className="flex flex-wrap items-center justify-between gap-y-2">
                 <RouteBanner answer={viewing.answer} status={viewing.status} />
-                {/* 历史回看的流入入口：仅已完成的问答可入画布/转深度研究 */}
-                {viewing.status === "completed" && (
-                  <>
-                    <button
+                {/* 历史回看的流入入口：仅已落库完成的问答可入画布 / 转深度研究 */}
+                {viewing.status === "completed" && bridgeQuestionId && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <BridgePill
+                      icon={PenTool}
+                      label="加入画布"
+                      title="把本次问答编入洞察画布"
                       onClick={() => setAddToCanvasOpen(true)}
-                      className="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:bg-black/[0.03]"
-                      style={{ borderColor: "var(--line)", color: "var(--purple)" }}
-                    >
-                      <PenTool size={10} /> 加入画布
-                    </button>
-                    {currentQuestionId && (
-                      <button
-                        onClick={() => router.push(`/research?fromQuestion=${currentQuestionId}`)}
-                        className="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:bg-black/[0.03]"
-                        style={{ borderColor: "var(--line)", color: "var(--purple)" }}
-                      >
-                        <Telescope size={10} /> 进行深入研究
-                      </button>
-                    )}
-                  </>
+                    />
+                    <BridgePill
+                      icon={Telescope}
+                      label="进行深入研究"
+                      title="以本次问答结论作为研究背景，前往深度研究补充研究方向"
+                      primary
+                      onClick={() => router.push(`/research?fromQuestion=${bridgeQuestionId}`)}
+                    />
+                  </div>
                 )}
               </div>
               {viewing.answer.charts && viewing.answer.charts.length > 0 && (
@@ -570,7 +569,7 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
         open={addToCanvasOpen}
         onClose={() => setAddToCanvasOpen(false)}
         sourceType="question"
-        sourceId={currentQuestionId ?? state.questionId ?? ""}
+        sourceId={bridgeQuestionId ?? ""}
         sourceTitle={viewing ? viewing.question : currentQuestion}
       />
     </div>
@@ -588,6 +587,40 @@ function QuestionBubble({ question }: { question: string }) {
         {question}
       </div>
     </div>
+  );
+}
+
+/**
+ * 下游流入胶囊按钮（加入画布 / 进行深入研究）
+ * 实时完成区与历史详情头部共用，保证两处入口的行为与观感一致；
+ * primary 变体用于主行动（转深度研究），以紫色描边+浅底突出
+ */
+function BridgePill({
+  icon: Icon,
+  label,
+  title,
+  primary = false,
+  onClick,
+}: {
+  icon: typeof PenTool;
+  label: string;
+  title: string;
+  primary?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all hover:-translate-y-0.5"
+      style={{
+        borderColor: primary ? "var(--purple)" : "var(--line)",
+        background: primary ? "var(--purple-pale)" : "transparent",
+        color: "var(--purple)",
+      }}
+    >
+      <Icon size={11} /> {label}
+    </button>
   );
 }
 

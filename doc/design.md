@@ -409,12 +409,17 @@ type ResearchState =
 | DuckDB | 离线分析、跨源聚合、大规模 CSV/Parquet 处理 |
 | Polars | 高并发内存计算、流式数据处理 |
 
-### 6.3 缓存与消息
+### 6.3 缓存与消息（未实施 / 后续阶段）
 
-| 组件 | 用途 |
-|------|------|
-| Redis | 会话缓存、限流、任务状态锁 |
-| 消息队列 | 异步任务调度、事件驱动、研究任务队列 |
+> **实现状态说明**：本节组件均为后续阶段的演进预留，**本期未落地**。相关环境变量仅在 `lib/env.ts` 的 Zod Schema 中占位声明，业务代码零读取；`docker-compose.yml` 已不再启动 Redis / MinIO 容器。当前实际链路全部以 PostgreSQL + 本地文件承载，下表「当前替代实现」为事实来源。
+
+| 组件 | 规划用途 | 状态 | 当前替代实现 |
+|------|---------|------|-------------|
+| Redis | 会话缓存、限流、任务状态锁 | ❌ 未实施 | 会话与任务状态存 PostgreSQL；`REDIS_URL` 仅预留声明，无客户端依赖与读取点 |
+| 消息队列 | 异步任务调度、事件驱动、研究任务队列 | ❌ 未实施 | 研究任务在 API 内同步执行 LangGraph；定时交付由 `lib/server/scheduler` 轮询驱动；`MQ_URL` 仅预留声明 |
+| 对象存储（S3 / MinIO） | 导出物、附件、快照存储 | ❌ 未实施 | 画布导出 PNG 落 `public/exports/`（`image-channel.ts`）；邮件降级内容落 `.deliveries/`（`email-channel.ts`）；`OBJECT_STORAGE_*` 仅预留声明 |
+
+**接入前置条件**（后续阶段启用时需同步完成）：引入对应客户端依赖、移除 `lib/env.ts` 中的占位默认值改为强校验、补充 Adapter 实现（遵循 12.2「Adapter 可替换」）、恢复 `docker-compose.yml` 中的相应服务。
 
 ### 6.4 核心数据模型
 
