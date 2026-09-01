@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { AgentTimeline, CitationList } from "@/components/agent/AgentTimeline";
+import { GraphPanel } from "@/components/research/GraphPanel";
 
 /** react-markdown 仅在产出报告后需要，拆出首屏 chunk 降低路由切换开销 */
 const MarkdownView = dynamic(() =>
@@ -122,6 +123,9 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
 
   const { state, streaming, start, stop } = useAgentStream();
 
+  // 研究知识图谱刷新信号：每次研究完成后递增，触发面板重新拉取（本次研究已沉淀入图）
+  const [graphRefreshSignal, setGraphRefreshSignal] = useState(0);
+
   const loadTasks = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/research?page=1&pageSize=50");
@@ -184,8 +188,9 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
         ...(sourceQuestion ? { sourceQuestionId: sourceQuestion.id } : {}),
       },
       () => {
-        // 完成后刷新任务列表（报告已在 live 视图中完整呈现）
+        // 完成后刷新任务列表与研究知识图谱（报告已在 live 视图中完整呈现）
         loadTasks();
+        setGraphRefreshSignal((s) => s + 1);
       },
     );
   }, [question, depth, start, loadTasks, sourceQuestion]);
@@ -216,6 +221,15 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
     }
     loadTasks();
   }, [viewingId, loadTasks]);
+
+  /** 图谱面板点击历史研究：按 questionId 定位任务并回看 */
+  const openByQuestionId = useCallback(
+    (questionId: string) => {
+      const task = tasks.find((t) => t.questionId === questionId);
+      if (task) openTask(task.id);
+    },
+    [tasks, openTask],
+  );
 
   const answer = detail?.task.answer ?? null;
   const liveActive = mode === "live";
@@ -574,6 +588,9 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
                 </div>
               </section>
             )}
+
+            {/* 研究知识图谱：历史研究沉淀（Understand-Anything 融合），点击可回看关联研究 */}
+            <GraphPanel refreshSignal={graphRefreshSignal} onOpenQuestion={openByQuestionId} />
           </div>
         )}
       </div>

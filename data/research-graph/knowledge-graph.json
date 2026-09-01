@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-01T13:27:15.938Z",
+  "nodes": [
+    {
+      "id": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "label": "Meta",
+      "type": "entity",
+      "summary": "三方对比中的相对最优渠道，2026年1-8月FD口径ROI约0.99，FD→RD转化率47.1%，但完整ROI待验证。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_45bdf464-ff55-4179-8231-b7ee7466ddc4",
+      "label": "TikTok",
+      "type": "entity",
+      "summary": "主要竞品，首充率1.73%、FD→RD转化率20.9%、复购率0.36%，流量精准度较低。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_563236f3-cb4d-4f20-bafb-8cdce2654909",
+      "label": "X",
+      "type": "entity",
+      "summary": "竞品渠道，CPI 11.70元，FD→RD转化率7.6%、复购率0.19%，表现较弱。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_43b4d7ea-1ff0-4528-a9ad-f80094b0efa3",
+      "label": "CPI",
+      "type": "entity",
+      "summary": "核心成本指标，Meta为6.06元，高于TikTok的1.22元，低于X的11.70元，但不能单独决定预算分配。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_2f317537-272f-4bcc-8f97-11732f3dc35d",
+      "label": "ROI",
+      "type": "entity",
+      "summary": "核心效果指标，Meta FD口径约0.99，处于盈亏临界，RD口径数据缺失无法确认超1.0。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_10f4a87c-bcb0-4406-b1cf-00c4e632e02d",
+      "label": "FD→RD转化率",
+      "type": "entity",
+      "summary": "衡量用户质量的关键漏斗指标，Meta为47.1%，显著高于TikTok的20.9%和X的7.6%。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_919cd4bd-8d50-4f6e-a5e6-dbd55897cfb7",
+      "label": "iOS ATT",
+      "type": "entity",
+      "summary": "隐私政策，可能导致Meta归因窗口内收入事件缺失，使FD与RD金额被系统性低估。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_2a743f6c-7abd-4eef-a3b3-1c5e9b8dbc06",
+      "label": "转化API",
+      "type": "entity",
+      "summary": "服务端事件回传技术，可弥补iOS ATT下的归因缺失，配合MMP去重校准ROI。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_d7b5d965-3d03-4261-86b5-2d4c8c293e90",
+      "label": "投放策略优化",
+      "type": "topic",
+      "summary": "围绕Meta数据缺口与临界ROI，探讨预算维持、小步测试及后续放量的决策路径。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_4f398543-155f-463e-8f3c-28e64b8fa077",
+      "label": "跨渠道效果对比",
+      "type": "topic",
+      "summary": "比较Meta、TikTok、X在CPI、首充率、FD→RD转化率、复购率等指标上的表现与趋势。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "node_50888736-0f14-4594-9420-3c652479cd25",
+      "label": "归因数据完整性",
+      "type": "topic",
+      "summary": "核心在于补齐RD金额、分维度数据，并在iOS ATT等隐私政策下通过CAPI校准完整ROI。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    },
+    {
+      "id": "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7",
+      "label": "基于Meta当前的高ROI表现，制定系统化的投放策略调整方案，在维持优势的同时进一步提升预算效率与完整ROI。",
+      "type": "report",
+      "summary": "2026年1月至8月，Meta FD口径ROI约0.99，花费261.6万元，FD→RD转化率47.1%领先TikTok与X，但RD数据缺位，策略应优先补数据、小步测试后再考虑加码。",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ],
+      "updatedAt": "2026-09-01T13:27:15.938Z"
+    }
+  ],
+  "edges": [
+    {
+      "source": "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7",
+      "target": "node_d7b5d965-3d03-4261-86b5-2d4c8c293e90",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7",
+      "target": "node_4f398543-155f-463e-8f3c-28e64b8fa077",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7",
+      "target": "node_50888736-0f14-4594-9420-3c652479cd25",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "target": "node_2f317537-272f-4bcc-8f97-11732f3dc35d",
+      "relation": "FD口径ROI约为0.99",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "target": "node_45bdf464-ff55-4179-8231-b7ee7466ddc4",
+      "relation": "FD→RD转化率高于（47.1% vs 20.9%）",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "target": "node_563236f3-cb4d-4f20-bafb-8cdce2654909",
+      "relation": "FD→RD转化率高于（47.1% vs 7.6%）",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "target": "node_43b4d7ea-1ff0-4528-a9ad-f80094b0efa3",
+      "relation": "CPI为6.06元，介于TikTok与X之间",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_919cd4bd-8d50-4f6e-a5e6-dbd55897cfb7",
+      "target": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "relation": "导致归因事件缺失，可能低估ROI",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_2a743f6c-7abd-4eef-a3b3-1c5e9b8dbc06",
+      "target": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "relation": "通过服务端事件回传校准归因数据",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_4f398543-155f-463e-8f3c-28e64b8fa077",
+      "target": "node_6b96b0fe-4f36-4059-b48e-38b8a547a91e",
+      "relation": "揭示了相对效率优势",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    },
+    {
+      "source": "node_50888736-0f14-4594-9420-3c652479cd25",
+      "target": "node_2f317537-272f-4bcc-8f97-11732f3dc35d",
+      "relation": "是确认完整ROI超1.0的前提",
+      "reportIds": [
+        "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7"
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "questionId": "question_b46145b8-adb3-4c6e-a9a8-cb4dfd2f38c7",
+      "question": "从数据结果，Meta的投放策略要做什么调整？",
+      "objective": "基于Meta当前的高ROI表现，制定系统化的投放策略调整方案，在维持优势的同时进一步提升预算效率与完整ROI。",
+      "summary": "2026年1月至8月，Meta FD口径ROI约0.99，花费261.6万元，FD→RD转化率47.1%领先TikTok与X，但RD数据缺位，策略应优先补数据、小步测试后再考虑加码。",
+      "createdAt": "2026-09-01T13:27:15.938Z"
+    }
+  ]
+}

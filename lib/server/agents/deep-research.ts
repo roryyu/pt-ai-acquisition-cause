@@ -1,5 +1,8 @@
 import { chatCompletion, chatCompletionStream } from "@/lib/server/model-gateway";
 import { runOperator } from "@/lib/server/operators/registry";
+import { extractGraphPatch } from "@/lib/server/research-graph/extractor";
+import { loadGraph, mergeGraph, saveGraph, type MergeStats } from "@/lib/server/research-graph/store";
+import { verifyCitationIntegrity, type CitationReview } from "@/lib/server/research-graph/review";
 import type { AgentEvent } from "./events";
 import { PLANNER_PROMPT, EXTRACTOR_PROMPT, REPORT_PROMPT } from "./prompts";
 
@@ -13,6 +16,12 @@ import { PLANNER_PROMPT, EXTRACTOR_PROMPT, REPORT_PROMPT } from "./prompts";
  *
  * 状态机映射 ResearchState：
  *   queued → planning → collecting → analyzing → writing → completed | failed
+ *
+ * Understand-Anything 融合（doc/深度研究知识图谱融合设计-Understand-Anything.md）：
+ * - 图谱引导规划：发起前检索研究知识图谱，命中历史研究/实体注入 Planner 与报告生成；
+ * - 并行收集：子问题经并发受限并行池收集证据（UA file-analyzer 并行 worker 思想）；
+ * - 产出校验：报告完成后引用完整性校验（graph-reviewer 思想，软校验）；
+ * - 图谱沉淀：报告经 LLM 抽取实体/主题/关系，增量合并入知识图谱（失败静默降级）。
  *
  * 算子优先（design.md 5.2.2 研究算子）：检索/抽取/对比动作一律经算子注册表
  * runOperator 调度（search / extract / compare）；跨材料证据整合与流式报告
@@ -55,6 +64,10 @@ export interface DeepResearchResult {
   report: string;
   citations: CitationEntry[];
   elapsedMs: number;
+  /** 引用完整性校验结论（软校验，不阻断完成） */
+  review?: CitationReview;
+  /** 本次研究对知识图谱的增量统计（图谱更新失败时为 null） */
+  graphStats?: MergeStats | null;
 }
 
 export interface DeepResearchOptions {
@@ -69,6 +82,8 @@ export interface DeepResearchOptions {
   depth?: "standard" | "deep";
   /** 来源任务问答背景（任务问答「进行深入研究」时注入，见 prompts.ts researchSourceContextBlock） */
   sourceContext?: string;
+  /** 研究知识图谱背景（发起前图谱检索命中，见 prompts.ts graphContextBlock） */
+  graphContext?: string;
 }
 
 // ─── 引用登记（全局去重分配编号）──────────────────────────────────────────────
@@ -101,12 +116,14 @@ interface RawPlan {
 async function planResearch(
   question: string,
   sourceContext?: string,
+  graphContext?: string,
 ): Promise<{ objective: string; subQuestions: SubQuestionPlan[] }> {
+  // 背景前置注入（任务问答背景 + 图谱背景可叠加），子问题围绕用户研究方向在背景之上向外延展
+  const prefixes = [sourceContext, graphContext].filter((p) => p && p.trim()).join("\n\n");
   const raw = await chatCompletion(
     [
       { role: "system", content: PLANNER_PROMPT },
-      // 来源任务问答背景前置注入，子问题围绕用户研究方向在背景之上向外延展
-      { role: "user", content: sourceContext ? `${sourceContext}\n\n研究问题：${question}` : question },
+      { role: "user", content: prefixes ? `${prefixes}\n\n研究问题：${question}` : question },
     ],
     { temperature: 0.2, maxTokens: 2048 },
   );
@@ -342,7 +359,75 @@ async function compareResearchEvidence(
   return comparison;
 }
 
-// ─── Synthesizer：研究报告生成（REPORT_PROMPT 见 prompts.ts）───────────────────────────────────────
+// ─── Synthesizer：研究报告生成（REPORT_PROMPT 见 prompts.ts）─────────────────────────────
+
+// ─── 并发受限并行池（UA file-analyzer 并行 worker 思想，零依赖内联实现）──────
+
+/** 按原顺序回填结果的受限并行执行器 */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]!, idx);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+// ─── 知识图谱增量更新（完成后沉淀，失败静默降级不阻断）────────────────────────
+
+/**
+ * 报告 → 图谱补丁 → 增量合并落盘（设计文档 4.1/4.2）。
+ * 任一步失败仅透出降级文案事件，返回 null，不影响研究完成。
+ */
+async function updateResearchGraph(
+  questionId: string,
+  question: string,
+  objective: string,
+  subResults: SubQuestionResult[],
+  report: string,
+  sink: (event: AgentEvent) => void,
+): Promise<MergeStats | null> {
+  const stepId = "dr_graph_update";
+  sink({ type: "tool_call", stepId, tool: "graph_update", input: { questionId } });
+  const t0 = Date.now();
+  try {
+    const patch = await extractGraphPatch(question, objective, subResults, report);
+    if (!patch) {
+      sink({ type: "tool_result", stepId, tool: "graph_update", summary: "图谱抽取无可入图内容，本次跳过沉淀", elapsedMs: Date.now() - t0 });
+      return null;
+    }
+    const base = await loadGraph();
+    const { graph, stats } = mergeGraph(base, patch, {
+      questionId,
+      question,
+      objective,
+      summary: patch.summary,
+      createdAt: new Date().toISOString(),
+    });
+    await saveGraph(graph);
+    sink({
+      type: "tool_result", stepId, tool: "graph_update",
+      summary: `研究知识图谱已更新：新增 ${stats.addedNodes} 节点 / ${stats.addedEdges} 边，更新 ${stats.updatedNodes} 节点`,
+      elapsedMs: Date.now() - t0,
+    });
+    return stats;
+  } catch (error) {
+    sink({
+      type: "tool_result", stepId, tool: "graph_update",
+      summary: `图谱更新失败（静默降级）：${error instanceof Error ? error.message : String(error)}`,
+      elapsedMs: Date.now() - t0,
+    });
+    return null;
+  }
+}
 
 // ─── 对外入口 ─────────────────────────────────────────────────────────────────
 
@@ -357,13 +442,13 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
   const registry = new CitationRegistry();
 
   try {
-    // ── Planner ──
+    // ── Planner（图谱背景 + 任务问答背景前置注入）──
     await options.onStateChange?.("planning");
     sink({ type: "phase", phase: "research", label: "研究规划（Planner 拆解子问题）" });
     const planStepId = `dr_plan`;
     sink({ type: "step", stepId: planStepId, agent: "supervisor", label: "拆解研究问题", status: "running" });
 
-    const { objective, subQuestions } = await planResearch(question, options.sourceContext);
+    const { objective, subQuestions } = await planResearch(question, options.sourceContext, options.graphContext);
 
     sink({
       type: "step", stepId: planStepId, agent: "supervisor",
@@ -376,13 +461,11 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
       subQuestions: subQuestions.map((s) => ({ id: s.id, question: s.question, rationale: s.rationale })),
     });
 
-    // ── Executor ──
+    // ── Executor（子问题并发 2 受限并行收集，事件按子问题 stepId 区分）──
     await options.onStateChange?.("collecting");
-    sink({ type: "phase", phase: "research", label: "证据收集（Executor 逐子问题检索与深读）" });
+    sink({ type: "phase", phase: "research", label: "证据收集（Executor 并行检索与深读）" });
 
-    const subResults: SubQuestionResult[] = [];
-    for (let i = 0; i < subQuestions.length; i++) {
-      const plan = subQuestions[i]!;
+    const subResults = await runWithConcurrency(subQuestions, 2, async (plan, i) => {
       const stepId = `dr_sub_${i + 1}`;
       sink({
         type: "step", stepId, agent: "researcher",
@@ -391,14 +474,14 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
         detail: plan.rationale || undefined,
       });
       const result = await collectEvidenceForSubQuestion(plan, registry, sink, stepId, deepReadCount);
-      subResults.push(result);
       await options.onSubTask?.(result);
       sink({
         type: "step", stepId, agent: "researcher",
         label: `子问题 ${i + 1} 完成（${result.findings.length} 条发现）`, status: "done",
         detail: `${(result.elapsedMs / 1000).toFixed(1)}s · ${result.searchedQueries.length} 次检索`,
       });
-    }
+      return result;
+    });
 
     const citations = registry.all();
     if (citations.length > 0) {
@@ -425,6 +508,8 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
     const citationBlock = citations.map((c) => `[${c.no}] ${c.title} — ${c.url}`).join("\n");
     // 来源任务问答背景：报告需呼应背景结论并给出针对性建议（无背景时不注入）
     const sourceBlock = options.sourceContext ? `${options.sourceContext}\n\n` : "";
+    // 研究知识图谱背景：报告需说明相对历史研究的增量（无命中时不注入）
+    const graphBlock = options.graphContext ? `${options.graphContext}\n\n` : "";
     // CompareOp 多源比对结论：供综合分析吸收共识/分歧判断（比对跳过时不注入）
     const compareBlock = comparison ? `## 多源比对结论（CompareOp 算子）\n${comparison}\n\n` : "";
 
@@ -434,7 +519,7 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
         { role: "system", content: REPORT_PROMPT },
         {
           role: "user",
-          content: `${sourceBlock}研究问题：${question}\n研究目标：${objective}\n\n${compareBlock}## 各子问题研究发现\n${evidenceBlock}\n\n## 引用来源\n${citationBlock}`,
+          content: `${sourceBlock}${graphBlock}研究问题：${question}\n研究目标：${objective}\n\n${compareBlock}## 各子问题研究发现\n${evidenceBlock}\n\n## 引用来源\n${citationBlock}`,
         },
       ],
       { temperature: 0.3, maxTokens: 8192 },
@@ -444,9 +529,24 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
     }
 
     sink({ type: "step", stepId: writeStepId, agent: "synthesizer", label: "报告撰写完成", status: "done" });
+
+    // ── Review：引用完整性校验（graph-reviewer 思想，软校验不阻断）──
+    const reviewStepId = "dr_review";
+    sink({ type: "step", stepId: reviewStepId, agent: "critic", label: "引用完整性校验", status: "running" });
+    const review = verifyCitationIntegrity(report, citations);
+    sink({
+      type: "step", stepId: reviewStepId, agent: "critic",
+      label: review.passed ? "引用完整性校验通过" : `引用校验发现 ${review.issues.length} 项问题（不阻断）`,
+      status: "done",
+      detail: review.passed ? undefined : review.issues.join("；"),
+    });
+
+    // ── 图谱沉淀：报告抽取实体/主题/关系增量合并入研究知识图谱 ──
+    const graphStats = await updateResearchGraph(options.questionId, question, objective, subResults, report, sink);
+
     await options.onStateChange?.("completed");
 
-    return { objective, subQuestions: subResults, report, citations, elapsedMs: Date.now() - t0 };
+    return { objective, subQuestions: subResults, report, citations, elapsedMs: Date.now() - t0, review, graphStats };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     sink({ type: "error", message: `深度研究失败：${message}` });

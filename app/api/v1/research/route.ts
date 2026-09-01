@@ -4,7 +4,9 @@ import { sseResponse } from "@/lib/server/sse";
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/server/ids";
 import { runDeepResearch } from "@/lib/server/agents/deep-research";
-import { researchSourceContextBlock } from "@/lib/server/agents/prompts";
+import { researchSourceContextBlock, graphContextBlock } from "@/lib/server/agents/prompts";
+import { loadGraph } from "@/lib/server/research-graph/store";
+import { queryGraph } from "@/lib/server/research-graph/query";
 import type { AgentEvent } from "@/lib/server/agents/events";
 import { getDefaultModel } from "@/lib/server/model-gateway";
 
@@ -59,6 +61,18 @@ export async function POST(request: Request) {
       }
     }
 
+    // 研究知识图谱背景（Understand-Anything 融合）：检索图谱命中的历史研究与实体，
+    // 注入 Planner 与报告生成，避免重复研究并在历史结论上延展；空图/无命中静默跳过
+    let graphContext: string | undefined;
+    try {
+      const graph = await loadGraph();
+      const hits = queryGraph(graph, input.question);
+      const block = graphContextBlock(hits);
+      if (block) graphContext = block;
+    } catch {
+      // 图谱不可用不影响研究发起
+    }
+
     // 问答载体（承载最终报告）+ 主研究任务；sourceQuestionId 记录链路来源（可回溯）
     await prisma.question.create({
       data: {
@@ -96,6 +110,7 @@ export async function POST(request: Request) {
           question: input.question,
           depth: input.depth,
           sourceContext,
+          graphContext,
           sink: (event: AgentEvent) => send(event),
           onStateChange: async (state) => {
             await prisma.researchTask
@@ -145,6 +160,9 @@ export async function POST(request: Request) {
             })),
             citations: result.citations,
             elapsedMs: result.elapsedMs,
+            // 知识图谱沉淀统计与引用校验结论（供历史回看展示）
+            ...(result.graphStats ? { graphStats: result.graphStats } : {}),
+            ...(result.review ? { review: result.review } : {}),
           }),
         ) as object;
         await prisma.question.update({

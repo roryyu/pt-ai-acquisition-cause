@@ -15,6 +15,7 @@
  * - agents/supervisor.ts    → 意图路由 / 直接回答 / Critic 校验 / 综合结论
  * - agents/workers.ts       → 数据分析 Agent / 深度研究 Agent
  * - agents/deep-research.ts → 研究规划 / 证据抽取 / 报告生成
+ * - research-graph/         → 研究知识图谱抽取与背景注入（Understand-Anything 融合）
  * - connectors/mcp.ts       → MCP 数据获取子 Agent
  * - api/v1/ask/route.ts     → 多轮追问的对话上下文压缩
  */
@@ -160,7 +161,7 @@ export const PLANNER_PROMPT = `你是流量投放归因平台的研究规划 Age
 2. subQuestions：3-5 个互相补充、覆盖问题主要方面的子问题（不重叠、不遗漏关键维度）
 3. 每个子问题给出 rationale（为什么需要研究它）与 2-3 组精炼的中文检索关键词
 4. 拆解视角参考：市场格局 / 规模与增长 / 主要玩家与竞争 / 媒体渠道与投放环境 / 技术与产品 / 政策与风险 / 趋势预测——按问题相关性取舍；若输入含「任务问答背景」，子问题必须围绕用户给出的研究方向在背景结论之上向外延展（解释成因/外部验证/应对策略），不得重复背景中已有的内部数据结论（内部数据不在联网检索范围内）
-5. 关键词优先包含背景中出现的关键实体（渠道/市场/竞品等），提高检索针对性
+5. 关键词优先包含背景中出现的关键实体（渠道/市场/竞品等），提高检索针对性；若输入含「研究知识图谱背景」，关键词优先复用背景中的实体名（渠道/市场/竞品），子问题必须在历史研究结论之上向外延展（更新数据时效/新增维度/外部验证/应对策略），不得原样重复历史研究已覆盖的方面
 
 仅输出 JSON：
 {"objective": "...", "subQuestions": [{"question": "...", "rationale": "...", "keywords": ["...", "..."]}]}`;
@@ -195,7 +196,7 @@ export const REPORT_PROMPT = `你是流量投放归因平台的首席研究分�
 写作要求：
 1. 所有事实性陈述必须来自研究发现，禁止编造数据；若输入含「任务问答背景」，综合分析需呼应背景结论（外部证据如何解释/印证/拓展背景中的发现），结论与展望给出针对背景的可落地建议；若输入含「多源比对结论（CompareOp 算子）」，综合分析需吸收其共识/分歧与置信度判断，报告不得与其相悖
 2. 数值引用保留原始口径（预测值注明预测机构与年份）
-3. 中文，正式书面语，篇幅 800-1500 字`;
+3. 中文，正式书面语，篇幅 800-1500 字；若输入含「研究知识图谱背景」，综合分析需说明本研究相对历史结论的增量（印证/修正/拓展），引用历史结论时注明其研究时点`;
 
 /**
  * 来源任务问答背景块：任务问答「进行深入研究」时注入 Planner 与报告生成（纯函数，便于测试）
@@ -214,6 +215,45 @@ export function researchSourceContextBlock(source: {
 用户此前的问题：${source.question}
 背景结论：
 ${body}`;
+}
+
+// ─── 研究知识图谱（research-graph/，Understand-Anything 融合）────────────────
+
+/** 图谱抽取 Agent：研究报告 → 实体/主题/关系图谱补丁（设计文档 4.1） */
+export const GRAPH_EXTRACT_PROMPT = `你是流量投放归因平台的研究知识图谱构建 Agent。从一次已完成的深度研究产出中抽取结构化知识图谱要素，供后续研究复用。
+
+要求：
+1. summary：一句话概括报告核心结论（≤120 字，含关键数据与时间）
+2. entities：3-8 个研究材料中出现的具体实体——投放渠道（如 Meta / X / TikTok）、承接端、投放市场、竞品/厂商、政策法规、核心指标（CPI / ROI 等）；每个实体附一句话在本研究中的摘要（可保留引用编号）
+3. topics：1-3 个本研究所属的研究主题（抽象主题名词，如「广告竞价成本」「出海合规风险」）
+4. relations：实体之间（或实体与主题之间）至多 8 条关系，source/target 使用实体或主题的原文名称，relation 用短语描述（如「竞争于」「投放于」「受…驱动」「受…影响」）
+5. 所有要素必须可在输入材料中找到依据，禁止编造材料中未出现的实体与关系；泛化概念归入 topics 而非 entities
+
+仅输出 JSON：
+{"summary": "...", "entities": [{"label": "...", "summary": "..."}], "topics": [{"label": "...", "summary": "..."}], "relations": [{"source": "...", "target": "...", "relation": "..."}]}`;
+
+/**
+ * 图谱背景块：图谱检索命中的历史研究与相关实体组装为注入文本（纯函数，便于测试）
+ * 注入 Planner 与报告生成；无命中时返回空串不注入；总长硬截断 2000 字。
+ */
+export function graphContextBlock(hits: {
+  nodes: Array<{ label: string; type: string; summary: string }>;
+  reports: Array<{ question: string; summary: string; createdAt: string }>;
+}): string {
+  if (hits.nodes.length === 0 && hits.reports.length === 0) return "";
+  const lines: string[] = ["## 研究知识图谱背景（平台历史深度研究沉淀，规划时需避免与历史研究重叠、在其上向外延展）"];
+  if (hits.reports.length > 0) {
+    lines.push("相关历史研究：");
+    for (const r of hits.reports) {
+      const summary = r.summary.trim() ? `——结论摘要：${r.summary.trim().slice(0, 200)}` : "";
+      lines.push(`- [${r.createdAt.slice(0, 10)}] 「${r.question.slice(0, 80)}」${summary}`);
+    }
+  }
+  if (hits.nodes.length > 0) {
+    const nodeDescs = hits.nodes.map((n) => (n.summary.trim() ? `${n.label}（${n.summary.trim().slice(0, 60)}）` : n.label));
+    lines.push(`相关实体/主题：${nodeDescs.join("；")}`);
+  }
+  return lines.join("\n").slice(0, 2000);
 }
 
 // ─── MCP 数据获取子 Agent（connectors/mcp.ts） ────────────────────────────────
