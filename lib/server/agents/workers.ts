@@ -7,13 +7,13 @@ import {
   createRunOperatorTool, createSqlQueryTool, createInspectSchemaTool, createShowTableTool, createGenerateChartTool,
   createWebSearchTool, createFetchPageTool, createRecordFindingTool,
   createApiSourceTool, createMcpSourceTool, externalSourcesSummary,
+  runtimeRunOperatorToolDescription, runtimeTablesHint,
 } from "./tools";
 import type { AgentRunContext } from "./events";
 import { nextStepId } from "./events";
-import { demoTablesHint } from "./tools";
 import {
   buildDataAnalystPrompt, RESEARCHER_PROMPT,
-  researchExternalSourcesBlock, critiqueFeedbackBlock,
+  dataAnalystExternalSourcesBlock, researchExternalSourcesBlock, critiqueFeedbackBlock,
 } from "./prompts";
 
 /**
@@ -56,16 +56,32 @@ export async function runDataAnalystWorker(ctx: AgentRunContext): Promise<string
   });
 
   const llm = getChatModel({ temperature: 0 });
+
+  // 外部数据源与运行时语义模型（内置 + DB 自定义）：数据字典与算子目录全量注入
+  const [externalSources, operatorDescription, tablesHint] = await Promise.all([
+    loadExternalSources(),
+    runtimeRunOperatorToolDescription(),
+    runtimeTablesHint(),
+  ]);
+  const apiSources = externalSources.filter((s) => s.type === "api");
+
+  const tools: StructuredToolInterface[] = [
+    createRunOperatorTool(ctx, operatorDescription),
+    createSqlQueryTool(ctx),
+    createInspectSchemaTool(ctx),
+    createShowTableTool(ctx),
+    createGenerateChartTool(ctx),
+  ];
+  if (apiSources.length > 0) tools.push(createApiSourceTool(ctx, apiSources));
+
+  const externalBlock = externalSources.length > 0
+    ? dataAnalystExternalSourcesBlock(externalSourcesSummary(externalSources))
+    : "";
+
   const agent = createReactAgent({
     llm,
-    tools: [
-      createRunOperatorTool(ctx),
-      createSqlQueryTool(ctx),
-      createInspectSchemaTool(ctx),
-      createShowTableTool(ctx),
-      createGenerateChartTool(ctx),
-    ],
-    prompt: buildDataAnalystPrompt(demoTablesHint()),
+    tools,
+    prompt: buildDataAnalystPrompt(tablesHint) + externalBlock,
   });
 
   const messages: Array<{ role: "user"; content: string }> = [

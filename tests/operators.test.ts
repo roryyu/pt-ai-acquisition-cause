@@ -13,6 +13,12 @@ vi.mock("@/lib/env", () => ({
 vi.mock("@/lib/server/connectors/postgres", () => ({
   executeReadOnlyQuery: vi.fn(),
 }));
+// 算子层运行时语义模型：隔离 DB，固定返回内置演示模型（runtimeSemanticModels 走 model-store）
+vi.mock("@/lib/db", () => ({ prisma: {} }));
+vi.mock("@/lib/server/semantic/model-store", async () => {
+  const { DEMO_SEMANTIC_MODELS } = await import("@/lib/server/semantic/semantic-query");
+  return { listAllSemanticModels: vi.fn(async () => DEMO_SEMANTIC_MODELS) };
+});
 
 import {
   operatorMetricCatalog, operatorDimensionsForModel, aggExprOf,
@@ -174,10 +180,10 @@ describe("runOperator 参数校验与执行", () => {
     expect(queryMock).not.toHaveBeenCalled();
   });
 
-  it("指标不在目录内被 Schema 拦截", async () => {
+  it("指标不在目录内被运行时拦截（Schema 已放宽为字符串以支持自定义模型）", async () => {
     const result = await runOperator("aggregate", { metric: "gmv_v2", groupBy: "region" });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("参数校验失败");
+    expect(result.error).toContain("未知指标: gmv_v2");
     expect(queryMock).not.toHaveBeenCalled();
   });
 
@@ -191,7 +197,7 @@ describe("runOperator 参数校验与执行", () => {
   it("无日期时间列的指标不允许时序分析", async () => {
     const result = await runOperator("timeseries", { metric: "avg_price" });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("参数校验失败");
+    expect(result.error).toContain("无日期时间列，不支持时序分析");
     expect(queryMock).not.toHaveBeenCalled();
   });
 
@@ -210,12 +216,20 @@ describe("runOperator 参数校验与执行", () => {
     expect(queryMock).toHaveBeenCalledTimes(1);
   });
 
-  it("注册表包含六个数据算子与六个研究算子", () => {
+  it("api_fetch 缺少必填参数被 Schema 拦截（不触达外部 API）", async () => {
+    const result = await runOperator("api_fetch", { sourceId: "data_source_x" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("参数校验失败");
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it("注册表包含七个数据算子与六个研究算子", () => {
     const operators = listOperators();
-    expect(operators.filter((o) => o.category === "data")).toHaveLength(6);
+    expect(operators.filter((o) => o.category === "data")).toHaveLength(7);
     expect(operators.filter((o) => o.category === "research")).toHaveLength(6);
     for (const op of operators.filter((o) => o.category === "data")) {
-      expect(op.engine).toBe("sql");
+      expect(op.engine === "sql" || op.engine === "api").toBe(true);
     }
+    expect(operators.find((o) => o.id === "api_fetch")?.engine).toBe("api");
   });
 });

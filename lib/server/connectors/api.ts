@@ -153,10 +153,22 @@ export interface ApiCallResult {
   truncated: boolean;
 }
 
-/** 将 path 安全拼接到 endpoint（不允许换 host/协议） */
+/**
+ * 将 path 安全拼接到 endpoint（不允许换 host/协议）
+ *
+ * 拼接语义：保留 endpoint 的 base path——path 去除前导斜杠后追加到
+ * endpoint 路径末尾（无尾斜杠自动补）。如 endpoint 为
+ * `https://host/reports-service`、path 为 `/csv_report` 或 `csv_report`，
+ * 均拼为 `https://host/reports-service/csv_report`（而非丢失 base path）。
+ * endpoint 为纯域名时行为与标准相对路径解析一致。
+ */
 export function resolveRequestUrl(endpoint: string, path?: string, params?: Record<string, string>): string {
   const base = new URL(endpoint);
-  const url = new URL(path ?? "", base);
+  let url = base;
+  if (path && path.length > 0) {
+    const basePath = base.pathname.endsWith("/") ? base.pathname : `${base.pathname}/`;
+    url = new URL(basePath + path.replace(/^\/+/, ""), base.origin);
+  }
   if (url.origin !== base.origin) {
     throw new Error("path 不允许指向其他主机");
   }
@@ -166,7 +178,8 @@ export function resolveRequestUrl(endpoint: string, path?: string, params?: Reco
   return url.toString();
 }
 
-function parseBody(raw: string, contentType: string): unknown {
+/** 响应体解析：JSON（按 content-type 或形态启发）可解析时返回对象，否则保留原文（如 CSV） */
+export function parseBody(raw: string, contentType: string): unknown {
   if (/json/i.test(contentType) || /^[\[{]/.test(raw.trim())) {
     try {
       return JSON.parse(raw);

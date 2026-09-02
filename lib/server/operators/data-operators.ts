@@ -1,21 +1,27 @@
 import { z } from "zod";
 import { executeReadOnlyQuery } from "@/lib/server/connectors/postgres";
 import { DEMO_SEMANTIC_MODELS, type SemanticModelDef } from "@/lib/server/semantic/semantic-query";
+import { listAllSemanticModels } from "@/lib/server/semantic/model-store";
+import { listDataSources } from "@/lib/server/connectors/datasources";
+import { cachedRestRequest } from "@/lib/server/connectors/api-cache";
+import { parseCsvTable, csvTableToObjects } from "@/lib/server/connectors/csv";
 import { env } from "@/lib/env";
 
 /**
  * 数据分析算子（design.md 5.2.1）
  *
- * 六个预置算子，全部基于 SQL 在 PostgreSQL/DuckDB 兼容语法上真实执行：
+ * 七个预置算子：六个 SQL 算子在 PostgreSQL/DuckDB 兼容语法上真实执行，
+ * 一个 API 取数算子经带缓存的 REST 连接器拉取外部 CSV 报告：
  * - AggregateOp   分组聚合、多维度下钻
  * - FilterOp      条件过滤
  * - TransformOp   派生指标计算（CPI/CPM/CTR/FD 率/RD 率/ROI 等）
  * - TimeSeriesOp  时序补全、同比环比
  * - AnomalyOp     异常检测（Z-Score / 环比突变）
  * - JoinOp        跨源数据关联（投放日汇总 × 投放计划累计效果）
+ * - ApiFetchOp    外部 API 数据源取数（如 Adjust 报告服务，CSV 结构化 + 查询缓存）
  *
- * 指标/维度口径统一由语义层模型（DEMO_SEMANTIC_MODELS）驱动，
- * 算子不硬编码具体指标枚举；每个算子 = 元数据 + 纯执行函数，
+ * 指标/维度口径统一由语义层模型驱动（内置 DEMO_SEMANTIC_MODELS + DB 自定义模型，
+ * 见 runtimeSemanticModels），算子不硬编码具体指标枚举；每个算子 = 元数据 + 纯执行函数，
  * 由 registry.ts 注册，经 /api/v1/operators 暴露，并被任务问答的
  * run_operator 工具复用（算子优先、sql_query 兜底）。
  */
@@ -37,7 +43,7 @@ export interface OperatorMeta {
     options?: string[];
     placeholder?: string;
   }>;
-  engine: "sql" | "llm" | "hybrid";
+  engine: "sql" | "llm" | "hybrid" | "api";
 }
 
 export interface OperatorRunResult {
@@ -137,6 +143,18 @@ export function operatorDimensionsForModel(
     .map((d) => ({ id: d.id, name: d.name, column: d.column, values: d.values, description: d.description }));
 }
 
+/**
+ * 运行时语义模型集合：内置 + DB 自定义（如 Adjust 投放日指标）；
+ * DB 不可用时降级为内置模型（纯函数单测与离线场景不阻断）
+ */
+export async function runtimeSemanticModels(): Promise<SemanticModelDef[]> {
+  try {
+    return await listAllSemanticModels();
+  } catch {
+    return DEMO_SEMANTIC_MODELS;
+  }
+}
+
 /** 按聚合方式与物理列生成聚合表达式 */
 export function aggExprOf(agg: OperatorMetricEntry["agg"], column: string): string {
   switch (agg) {
@@ -200,17 +218,18 @@ export function timeConditions(timeColumn: string, range: TimeRangeInput): strin
   return conditions;
 }
 
-// ─── 动态输入枚举（由目录派生，与运行时校验共用单一数据源） ────────────────────
+// ─── 动态输入枚举（由目录派生，仅供 UI 提示；运行时校验以动态目录为准，
+// 自定义模型指标/模型 ID 无法预知，Schema 层放宽为字符串） ────────────────────
 
 type EnumTuple = [string, ...string[]];
 
-/** 全部算子可用指标 ID */
+/** 内置模型算子可用指标 ID（UI 提示用） */
 export const ALL_METRIC_IDS = operatorMetricCatalog().map((m) => m.id) as EnumTuple;
-/** 支持时序/异常检测的指标 ID（所属模型含日期时间列） */
+/** 内置模型支持时序/异常检测的指标 ID（UI 提示用） */
 export const TIME_METRIC_IDS = operatorMetricCatalog()
   .filter((m) => m.supportsTime)
   .map((m) => m.id) as EnumTuple;
-/** 内置语义模型 ID */
+/** 内置语义模型 ID（UI 提示用） */
 export const SEMANTIC_MODEL_IDS = DEMO_SEMANTIC_MODELS.map((m) => m.id) as EnumTuple;
 
 const DATE_INPUT = z.string().regex(DATE_REGEX);
@@ -233,7 +252,8 @@ export const AggregateOpMeta: OperatorMeta = {
 };
 
 export const AggregateInput = z.object({
-  metric: z.enum(ALL_METRIC_IDS),
+  // 指标 ID 不限于内置枚举：运行时按动态目录（内置+自定义模型）校验
+  metric: z.string().min(1),
   groupBy: z.string().min(1),
   dimensionValue: z.string().optional(),
   from: DATE_INPUT.optional(),
@@ -254,11 +274,12 @@ export function buildAggregateSql(
 
 export async function runAggregateOp(input: z.infer<typeof AggregateInput>): Promise<OperatorRunResult> {
   const start = Date.now();
-  const entry = operatorMetricCatalog().find((m) => m.id === input.metric);
+  const models = await runtimeSemanticModels();
+  const entry = operatorMetricCatalog(models).find((m) => m.id === input.metric);
   if (!entry) return failed("aggregate", new Error(`未知指标: ${input.metric}`), start);
-  const dim = operatorDimensionsForModel(entry.modelId).find((d) => d.id === input.groupBy);
+  const dim = operatorDimensionsForModel(entry.modelId, models).find((d) => d.id === input.groupBy);
   if (!dim) {
-    const valid = operatorDimensionsForModel(entry.modelId).map((d) => d.id).join(", ");
+    const valid = operatorDimensionsForModel(entry.modelId, models).map((d) => d.id).join(", ");
     return failed("aggregate", new Error(`指标 ${input.metric} 所属模型「${entry.modelName}」无维度 ${input.groupBy}，可用维度: ${valid}`), start);
   }
   const sql = buildAggregateSql(entry, dim, input);
@@ -291,7 +312,8 @@ export const TimeSeriesOpMeta: OperatorMeta = {
 };
 
 export const TimeSeriesInput = z.object({
-  metric: z.enum(TIME_METRIC_IDS),
+  // 指标 ID 运行时按动态目录校验（含 supportsTime 检查）
+  metric: z.string().min(1),
   granularity: z.enum(["day", "week", "month"]).default("month"),
   from: DATE_INPUT.optional(),
   to: DATE_INPUT.optional(),
@@ -324,7 +346,8 @@ ORDER BY bucket`;
 
 export async function runTimeSeriesOp(input: z.infer<typeof TimeSeriesInput>): Promise<OperatorRunResult> {
   const start = Date.now();
-  const entry = operatorMetricCatalog().find((m) => m.id === input.metric);
+  const models = await runtimeSemanticModels();
+  const entry = operatorMetricCatalog(models).find((m) => m.id === input.metric);
   if (!entry) return failed("timeseries", new Error(`未知指标: ${input.metric}`), start);
   if (!entry.supportsTime) {
     return failed("timeseries", new Error(`指标 ${input.metric} 所属模型无日期时间列，不支持时序分析`), start);
@@ -359,7 +382,8 @@ export const AnomalyOpMeta: OperatorMeta = {
 };
 
 export const AnomalyInput = z.object({
-  metric: z.enum(TIME_METRIC_IDS),
+  // 指标 ID 运行时按动态目录校验（含 supportsTime 检查）
+  metric: z.string().min(1),
   threshold: z.coerce.number().min(1).max(5).default(2),
   from: DATE_INPUT.optional(),
   to: DATE_INPUT.optional(),
@@ -395,7 +419,8 @@ LIMIT 30`;
 
 export async function runAnomalyOp(input: z.infer<typeof AnomalyInput>): Promise<OperatorRunResult> {
   const start = Date.now();
-  const entry = operatorMetricCatalog().find((m) => m.id === input.metric);
+  const models = await runtimeSemanticModels();
+  const entry = operatorMetricCatalog(models).find((m) => m.id === input.metric);
   if (!entry) return failed("anomaly", new Error(`未知指标: ${input.metric}`), start);
   if (!entry.supportsTime) {
     return failed("anomaly", new Error(`指标 ${input.metric} 所属模型无日期时间列，不支持异常检测`), start);
@@ -431,7 +456,8 @@ export const FilterOpMeta: OperatorMeta = {
 };
 
 export const FilterInput = z.object({
-  model: z.enum(SEMANTIC_MODEL_IDS),
+  // 模型 ID 运行时按动态目录校验（内置 + 自定义模型）
+  model: z.string().min(1),
   filters: z.record(z.string(), z.string()).optional(),
   from: DATE_INPUT.optional(),
   to: DATE_INPUT.optional(),
@@ -461,12 +487,13 @@ export function buildFilterSql(
 
 export async function runFilterOp(input: z.infer<typeof FilterInput>): Promise<OperatorRunResult> {
   const start = Date.now();
-  const model = DEMO_SEMANTIC_MODELS.find((m) => m.id === input.model);
+  const models = await runtimeSemanticModels();
+  const model = models.find((m) => m.id === input.model);
   if (!model) {
-    const valid = DEMO_SEMANTIC_MODELS.map((m) => m.id).join(", ");
+    const valid = models.map((m) => m.id).join(", ");
     return failed("filter", new Error(`未知语义模型: ${input.model}，可用: ${valid}`), start);
   }
-  const dims = operatorDimensionsForModel(model.id);
+  const dims = operatorDimensionsForModel(model.id, models);
   const filters = input.filters ?? {};
   const unknownDims = Object.keys(filters).filter((k) => !dims.some((d) => d.id === k));
   if (unknownDims.length > 0) {
@@ -620,6 +647,109 @@ export async function runJoinOp(input: z.infer<typeof JoinInput>): Promise<Opera
   } catch (error) {
     return failed("join", error, start, sql);
   }
+}
+
+// ─── ApiFetchOp：外部 API 数据源取数（design.md 5.1.2 API 适配器） ────────────
+
+export const ApiFetchOpMeta: OperatorMeta = {
+  id: "api_fetch",
+  name: "API 取数",
+  category: "data",
+  description: "从 API 数据源（如 Adjust 报告服务）拉取 CSV/JSON 报告并结构化为表格，经查询缓存与限流",
+  engine: "api",
+  params: [
+    { name: "sourceId", label: "数据源 ID", type: "string", required: true, placeholder: "data_source_xxx（API 类型）" },
+    { name: "path", label: "报告路径", type: "string", required: true, placeholder: "如 csv_report（拼接到 endpoint）" },
+    { name: "dimensions", label: "维度", type: "string", required: true, placeholder: "逗号分隔，如 day,network" },
+    { name: "metrics", label: "指标", type: "string", required: true, placeholder: "逗号分隔，如 installs,register_events" },
+    { name: "datePeriod", label: "日期区间", type: "string", required: true, placeholder: "如 -7d:-1d 或 2026-08-01:2026-08-25" },
+    { name: "filters", label: "过滤条件", type: "string", required: false, placeholder: 'JSON 对象，如 {"network__in":"web,gadmobe-apk"}' },
+    { name: "sortBy", label: "排序", type: "string", required: false, placeholder: "如 -installs（降序）" },
+    { name: "limit", label: "行数上限", type: "number", required: false, defaultValue: 200 },
+  ],
+};
+
+export const ApiFetchInput = z.object({
+  sourceId: z.string().min(1),
+  path: z.string().min(1),
+  dimensions: z.string().min(1),
+  metrics: z.string().min(1),
+  datePeriod: z.string().min(1),
+  /** 过滤条件直接并入 query 参数（支持 __in/__gte 等操作符后缀） */
+  filters: z.record(z.string(), z.string()).optional(),
+  sortBy: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+});
+
+/** 组装报告 API query 参数（纯函数，便于测试；键顺序固定保证缓存键稳定） */
+export function buildApiFetchParams(input: z.infer<typeof ApiFetchInput>): Record<string, string> {
+  const params: Record<string, string> = {
+    dimensions: input.dimensions,
+    metrics: input.metrics,
+    date_period: input.datePeriod,
+  };
+  for (const [key, value] of Object.entries(input.filters ?? {})) params[key] = value;
+  if (input.sortBy) params["sort_by"] = input.sortBy;
+  if (input.limit) params["limit"] = String(input.limit);
+  return params;
+}
+
+/** 响应体 → 表格（CSV 文本走 parseCsvTable；JSON rows 数组直接取对象行） */
+function apiBodyToTable(contentType: string, body: unknown): { columns: string[]; rows: Record<string, unknown>[] } | null {
+  if (contentType.includes("csv") && typeof body === "string") {
+    const table = parseCsvTable(body);
+    return { columns: table.header, rows: csvTableToObjects(table) };
+  }
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const rows = (body as { rows?: unknown }).rows;
+    if (Array.isArray(rows) && rows.every((r) => r && typeof r === "object" && !Array.isArray(r))) {
+      const objectRows = rows as Record<string, unknown>[];
+      const columns = Object.keys(objectRows[0] ?? {});
+      return { columns, rows: objectRows };
+    }
+  }
+  return null;
+}
+
+export async function runApiFetchOp(input: z.infer<typeof ApiFetchInput>): Promise<OperatorRunResult> {
+  const start = Date.now();
+  const source = (await listDataSources()).find((s) => s.id === input.sourceId);
+  if (!source || source.type !== "api" || !source.apiConfig?.endpoint) {
+    return failed("api_fetch", new Error(`API 数据源不存在或未配置 endpoint: ${input.sourceId}`), start);
+  }
+  const params = buildApiFetchParams(input);
+  let result;
+  try {
+    result = await cachedRestRequest(source.apiConfig, { method: "GET", path: input.path, params }, { sourceId: source.id });
+  } catch (error) {
+    return failed("api_fetch", error, start);
+  }
+  const notes: string[] = [];
+  if (result.cacheState === "fresh") notes.push("命中查询缓存（fresh），未请求上游");
+  if (result.cacheState === "stale") notes.push("上游异常，降级返回过期缓存（stale）");
+  if (result.status === 204) {
+    return {
+      ok: true, operatorId: "api_fetch", columns: [], rows: [], rowCount: 0,
+      elapsedMs: Date.now() - start, notes: [...notes, "区间无数据（204）"],
+    };
+  }
+  if (result.status < 200 || result.status >= 300) {
+    const detail = typeof result.body === "string" ? result.body.slice(0, 300) : JSON.stringify(result.body).slice(0, 300);
+    return failed("api_fetch", new Error(`API 返回 ${result.status}: ${detail}`), start);
+  }
+  if (result.truncated) notes.push("响应体超过 200KB 被截断，表格可能不完整（请缩小日期区间或减少维度）");
+  const table = apiBodyToTable(result.contentType, result.body);
+  if (!table) {
+    return failed("api_fetch", new Error(`无法解析响应为表格（content-type: ${result.contentType}）`), start);
+  }
+  const MAX_ROWS = 200;
+  const rows = table.rows.slice(0, MAX_ROWS);
+  if (table.rows.length > MAX_ROWS) notes.push(`结果 ${table.rows.length} 行，已截断至前 ${MAX_ROWS} 行`);
+  return {
+    ok: true, operatorId: "api_fetch", columns: table.columns, rows,
+    rowCount: rows.length, elapsedMs: Date.now() - start,
+    notes: [...notes, `数据源「${source.name}」，上游耗时 ${result.elapsedMs}ms`],
+  };
 }
 
 // ─── 失败包装 ─────────────────────────────────────────────────────────────────

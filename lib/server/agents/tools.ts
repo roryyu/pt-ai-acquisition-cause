@@ -2,15 +2,17 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { executeReadOnlyQuery, introspectSchema } from "@/lib/server/connectors/postgres";
 import { webSearch, fetchPage } from "@/lib/server/connectors/web";
-import { executeRestRequest, executeGraphQLQuery } from "@/lib/server/connectors/api";
+import { executeGraphQLQuery } from "@/lib/server/connectors/api";
+import { cachedRestRequest } from "@/lib/server/connectors/api-cache";
+import { parseCsvTable, csvTableToObjects } from "@/lib/server/connectors/csv";
 import { runMcpReactAgent } from "@/lib/server/connectors/mcp";
 import { displayEndpoint, type ResolvedDataSource } from "@/lib/server/connectors/datasources";
 import { runOperator } from "@/lib/server/operators/registry";
 import {
-  operatorMetricCatalogSummary, operatorDimensionCatalogSummary,
+  operatorMetricCatalogSummary, operatorDimensionCatalogSummary, runtimeSemanticModels,
 } from "@/lib/server/operators/data-operators";
 import { env } from "@/lib/env";
-import { DEMO_SEMANTIC_MODELS, semanticContextSummary } from "@/lib/server/semantic/semantic-query";
+import { DEMO_SEMANTIC_MODELS, semanticContextSummary, type SemanticModelDef } from "@/lib/server/semantic/semantic-query";
 import type { AgentRunContext, ChartSpec, TablePayload } from "./events";
 import { nextStepId } from "./events";
 
@@ -28,10 +30,10 @@ import { nextStepId } from "./events";
 // ─── 数据分析工具 ─────────────────────────────────────────────────────────────
 
 /** 数据分析算子 ID 枚举（与 registry 数据算子保持一致） */
-const DATA_OPERATOR_IDS = ["aggregate", "timeseries", "anomaly", "filter", "transform", "join"] as const;
+const DATA_OPERATOR_IDS = ["aggregate", "timeseries", "anomaly", "filter", "transform", "join", "api_fetch"] as const;
 
-/** run_operator 工具描述：算子清单 + 指标/维度目录（由语义层动态生成） */
-export function runOperatorToolDescription(): string {
+/** run_operator 工具描述：算子清单 + 指标/维度目录（由语义层动态生成，缺省内置模型） */
+export function runOperatorToolDescription(models?: SemanticModelDef[]): string {
   return `执行预置数据分析算子（算子优先原则：标准分析动作必须先调算子，不要自己拼 SQL）。可用算子：
 - aggregate 分组聚合：input {metric, groupBy, dimensionValue?, from?, to?}，groupBy 必须是该指标所属模型的维度，可选按维度值过滤，返回分组聚合结果（降序）
 - timeseries 时序分析：input {metric, granularity?(day/week/month，默认 month), from?, to?}，输出逐期数值与环比 mom_pct / 同比 yoy_pct
@@ -39,15 +41,21 @@ export function runOperatorToolDescription(): string {
 - filter 条件下钻：input {model, filters?(维度Id到维度值的对象，如 {"ad_channel":"Meta"}), from?, to?}，按模型全维度分组输出全部指标，用于下钻验证
 - transform 派生指标：input {from?, to?}，按月输出投放归因派生指标：CPI（花费/下载）、CPM、CTR、点击注册率、FD 率、RD 率、ROI（充值金额/花费）
 - join 跨源关联：input {from?, to?}，投放日汇总 × 投放计划表，按渠道×承接端对比实际效果与计划累计口径
+- api_fetch 外部 API 取数：input {sourceId, path, dimensions, metrics, datePeriod, filters?, sortBy?, limit?}，从 API 数据源（如 Adjust 报告服务）拉取报告并结构化为表格，经查询缓存与限流；仅当本地表无所需数据（如需实时/细粒度外部数据）时使用
 可用指标（metric 参数取值）：
-${operatorMetricCatalogSummary()}
+${operatorMetricCatalogSummary(models)}
 各模型可用维度（aggregate 的 groupBy / filter 的 filters 键）：
-${operatorDimensionCatalogSummary()}
+${operatorDimensionCatalogSummary(models)}
 日期格式 YYYY-MM-DD。`;
 }
 
+/** run_operator 工具描述（运行时全量语义模型：内置 + DB 自定义） */
+export async function runtimeRunOperatorToolDescription(): Promise<string> {
+  return runOperatorToolDescription(await runtimeSemanticModels());
+}
+
 /** 执行数据分析算子（算子优先于自由 SQL，结果自动注册为表格） */
-export function createRunOperatorTool(ctx: AgentRunContext) {
+export function createRunOperatorTool(ctx: AgentRunContext, description?: string) {
   return tool(
     async (input: { operatorId: (typeof DATA_OPERATOR_IDS)[number]; input: Record<string, unknown> }) => {
       const stepId = nextStepId(ctx);
@@ -98,9 +106,9 @@ export function createRunOperatorTool(ctx: AgentRunContext) {
     },
     {
       name: "run_operator",
-      description: runOperatorToolDescription(),
+      description: description ?? runOperatorToolDescription(),
       schema: z.object({
-        operatorId: z.enum(DATA_OPERATOR_IDS).describe("算子 ID：aggregate/timeseries/anomaly/filter/transform/join"),
+        operatorId: z.enum(DATA_OPERATOR_IDS).describe("算子 ID：aggregate/timeseries/anomaly/filter/transform/join/api_fetch"),
         input: z.record(
           z.string(),
           z.union([z.string(), z.number(), z.boolean(), z.record(z.string(), z.string())]),
@@ -484,18 +492,41 @@ export function createApiSourceTool(ctx: AgentRunContext, sources: ResolvedDataS
             parsedBody = input.body;
           }
         }
-        const result = await executeRestRequest(source.apiConfig, {
-          method: input.method ?? "GET",
-          path: input.path,
-          params: input.params,
-          body: parsedBody,
-        });
+        const result = await cachedRestRequest(
+          source.apiConfig,
+          {
+            method: input.method ?? "GET",
+            path: input.path,
+            params: input.params,
+            body: parsedBody,
+          },
+          { sourceId: source.id },
+        );
         ctx.sink({
           type: "tool_result", stepId, tool: "query_api_source",
-          summary: `HTTP ${result.status}（${result.elapsedMs}ms）`,
+          summary: result.fromCache
+            ? `命中缓存（${result.cacheState}）`
+            : `HTTP ${result.status}（${result.elapsedMs}ms）`,
           elapsedMs: Date.now() - startedAt,
         });
-        return JSON.stringify({ status: result.status, body: result.body, truncated: result.truncated }).slice(0, 20_000);
+        // CSV 响应结构化为表格行（避免原文占满 20K 截断窗口）
+        if (result.contentType.includes("csv") && typeof result.body === "string") {
+          if (result.status === 204 || result.body.trim().length === 0) {
+            return JSON.stringify({ status: result.status, rowCount: 0, note: "区间无数据", fromCache: result.fromCache });
+          }
+          const table = parseCsvTable(result.body);
+          const rows = csvTableToObjects(table).slice(0, 200);
+          return JSON.stringify({
+            status: result.status,
+            columns: table.header,
+            rowCount: rows.length,
+            rows,
+            truncated: result.truncated || table.rows.length > 200,
+            note: table.rows.length > 200 ? `共 ${table.rows.length} 行，已截断至前 200 行` : "",
+            fromCache: result.fromCache,
+          }).slice(0, 20_000);
+        }
+        return JSON.stringify({ status: result.status, body: result.body, truncated: result.truncated, fromCache: result.fromCache }).slice(0, 20_000);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         ctx.sink({ type: "tool_result", stepId, tool: "query_api_source", summary: `失败: ${msg}` });
@@ -504,10 +535,10 @@ export function createApiSourceTool(ctx: AgentRunContext, sources: ResolvedDataS
     },
     {
       name: "query_api_source",
-      description: `调用已注册的外部 API 数据源获取数据（只读）。REST 源传 path/method/params/body；GraphQL 源传 graphqlQuery/variables（禁止 mutation）。整个任务最多调用 6 次。可用数据源：\n${externalSourcesSummary(apiSources)}`,
+      description: `调用已注册的外部 API 数据源获取数据（只读，经查询缓存与限流，命中缓存不消耗上游配额）。REST 源传 path/method/params/body，CSV 响应自动结构化为表格；GraphQL 源传 graphqlQuery/variables（禁止 mutation）。整个任务最多调用 6 次。报告类取数优先用 run_operator 的 api_fetch 算子。可用数据源：\n${externalSourcesSummary(apiSources)}`,
       schema: z.object({
         sourceId: z.string().describe("数据源 ID（见工具描述中的可用数据源）"),
-        path: z.string().optional().describe("REST：相对路径，如 /v1/users"),
+        path: z.string().optional().describe("REST：拼接到 endpoint 之后的相对路径，如 csv_report（endpoint 已含基础路径时勿重复）"),
         method: z.enum(["GET", "POST"]).optional().describe("REST：请求方法，默认 GET"),
         params: z.record(z.string(), z.string()).optional().describe("REST：query 参数"),
         body: z.string().optional().describe("REST POST：JSON 字符串请求体"),
@@ -580,4 +611,14 @@ export function demoTablesHint(): string {
   return DEMO_SEMANTIC_MODELS.map(
     (m) => `- demo.${m.table}（${m.name}）：${m.dimensions.map((d) => d.id).join(", ")} | 指标：${m.metrics.map((x) => x.id).join(", ")}`,
   ).join("\n");
+}
+
+/** 数据字典（运行时全量语义模型：内置 + DB 自定义，如 Adjust 投放日指标） */
+export async function runtimeTablesHint(): Promise<string> {
+  const models = await runtimeSemanticModels();
+  return models
+    .map(
+      (m) => `- ${m.schema}.${m.table}（${m.name}）：${m.dimensions.map((d) => d.id).join(", ")} | 指标：${m.metrics.map((x) => x.id).join(", ")}`,
+    )
+    .join("\n");
 }

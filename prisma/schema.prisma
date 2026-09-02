@@ -273,6 +273,29 @@ model SemanticModel {
   @@map("semantic_models")
 }
 
+/// API 查询缓存（design.md 5.1.2 API 适配器「缓存」能力；§6.3 Redis 未实施，PG 为当前替代）
+/// cache_key = sha256(method + 完整 URL + params 按 key 排序)，命中未过期直接返回，
+/// 上游 429/5xx 时可降级返回过期旧值（stale-while-error）
+model ApiQueryCache {
+  id          String   @id // api_cache_xxx
+  sourceId    String   @map("source_id")
+  cacheKey    String   @unique @map("cache_key")
+  method      String
+  url         String
+  status      Int
+  contentType String   @map("content_type")
+  body        String   @db.Text
+  elapsedMs   Int      @map("elapsed_ms")
+  hitCount    Int      @default(0) @map("hit_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([sourceId])
+  @@index([expiresAt])
+  @@schema("cause")
+  @@map("api_query_cache")
+}
+
 // ─── 任务与报告（design.md 6.4.3）───────────────────────────────────────────────
 
 /// 问答表：对应 QuestionV1

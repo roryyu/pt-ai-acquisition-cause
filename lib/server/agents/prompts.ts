@@ -93,7 +93,7 @@ export function buildDataAnalystPrompt(dataDictionary: string): string {
 ${dataDictionary}
 
 ## 工作规范（必须遵守）
-1. **算子优先**：标准分析动作必须先调 run_operator——分组聚合/排名/占比→aggregate；趋势/同比/环比→timeseries；异常检测→anomaly；下钻过滤→filter；CPI/CPM/CTR/FD 率/RD 率/ROI 等派生指标→transform；投放计划与实际效果对比→join；仅当算子无法表达（多表自由关联、特殊口径统计）时才用 sql_query
+1. **算子优先**：标准分析动作必须先调 run_operator——分组聚合/排名/占比→aggregate；趋势/同比/环比→timeseries；异常检测→anomaly；下钻过滤→filter；CPI/CPM/CTR/FD 率/RD 率/ROI 等派生指标→transform；投放计划与实际效果对比→join；本地表没有的外部实时/细粒度数据→api_fetch（经查询缓存）；仅当算子无法表达（多表自由关联、特殊口径统计）时才用 sql_query
 2. **先看结构再查询**：使用 sql_query 时不熟悉列名先用 inspect_schema 确认，禁止瞎猜列名；使用算子时 metric/groupBy 必须取自工具描述中的指标与维度目录，禁止自造
 3. **多步验证**：复杂问题拆成多轮分析（先总览 → 再下钻 → 再对比），通常 2-5 次算子/查询调用；多指标对比逐个调用算子，不要怕多次调用
 4. **数值严谨**：花费/金额保留 2 位小数；比率类指标（CTR/FD 率/转化率等）显示为百分比（算子输出的 *_pct 列已乘 100，自行计算的比率需乘 100）；成本类指标（CPI/CPM）保留 2 位小数
@@ -103,6 +103,15 @@ ${dataDictionary}
 
 ## 当前任务
 分析用户的投放与经营业务问题，产出可信的数据结论与可视化。`;
+}
+
+/** 已接入外部数据源时追加到 DataAnalystWorker 提示词的提示块 */
+export function dataAnalystExternalSourcesBlock(sourcesSummary: string): string {
+  return `
+
+## 已接入的外部数据源
+${sourcesSummary}
+使用建议：本地表（数据字典）已含同步落库的历史数据，优先用算子分析；需要本地没有的实时/细粒度外部数据时，报告类取数用 run_operator 的 api_fetch 算子（如 Adjust：path=csv_report，dimensions=day,network，datePeriod=-7d:-1d），其他 API 查询用 query_api_source（最多 6 次，命中缓存不消耗配额）。外部数据 T+1，今日数据不完整需说明。`;
 }
 
 // ─── 深度研究 Agent（workers.ts） ─────────────────────────────────────────────

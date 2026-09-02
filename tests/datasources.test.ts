@@ -52,14 +52,14 @@ describe("REST 请求 URL 拼接 resolveRequestUrl", () => {
     expect(url).toBe("https://api.example.com/v1/users?page=2");
   });
 
-  it("path 指向其他主机时抛错", () => {
-    expect(() => resolveRequestUrl("https://api.example.com", "https://evil.com/steal")).toThrow(
-      /其他主机/,
+  it("跨主机 path 写法被中和为同主机子路径（不会跨主机重定向）", () => {
+    // base path 拼接语义下前导斜杠被剥离，绝对 URL / 协议相对路径均退化为子路径
+    expect(resolveRequestUrl("https://api.example.com", "https://evil.com/steal")).toBe(
+      "https://api.example.com/https://evil.com/steal",
     );
-  });
-
-  it("协议相对 path（//host）同样拒绝跨 host", () => {
-    expect(() => resolveRequestUrl("https://api.example.com", "//evil.com/x")).toThrow(/其他主机/);
+    expect(resolveRequestUrl("https://api.example.com", "//evil.com/x")).toBe(
+      "https://api.example.com/evil.com/x",
+    );
   });
 });
 

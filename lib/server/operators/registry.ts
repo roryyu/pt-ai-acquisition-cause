@@ -7,6 +7,7 @@ import {
   FilterOpMeta, runFilterOp, FilterInput,
   TransformOpMeta, runTransformOp, TransformInput,
   JoinOpMeta, runJoinOp, JoinInput,
+  ApiFetchOpMeta, runApiFetchOp, ApiFetchInput,
 } from "./data-operators";
 import {
   SearchOpMeta, runSearchOp,
@@ -20,7 +21,7 @@ import {
 /**
  * 算子注册表（design.md 5.2 算子层）
  *
- * 数据分析算子（SQL 引擎）+ 研究算子（LLM 引擎）统一注册，
+ * 数据分析算子（SQL/API 引擎）+ 研究算子（LLM 引擎）统一注册，
  * 每个算子 = 元数据（Meta）+ 输入 Schema（Zod）+ 执行函数。
  * 数据算子的输入 Schema 由语义层指标目录动态生成（见 data-operators.ts），
  * 供 /api/v1/operators（列表/试运行）与任务问答 run_operator 工具复用。
@@ -39,6 +40,7 @@ const REGISTRY: Record<string, RegisteredOperator> = {
   filter: { meta: FilterOpMeta, inputSchema: FilterInput, run: (i) => runFilterOp(i as never) },
   transform: { meta: TransformOpMeta, inputSchema: TransformInput, run: (i) => runTransformOp(i as never) },
   join: { meta: JoinOpMeta, inputSchema: JoinInput, run: (i) => runJoinOp(i as never) },
+  api_fetch: { meta: ApiFetchOpMeta, inputSchema: ApiFetchInput, run: (i) => runApiFetchOp(i as never) },
   search: { meta: SearchOpMeta, inputSchema: SearchInputSchema(), run: (i) => runSearchOp(i as never) as Promise<OperatorRunResult> },
   extract: { meta: ExtractOpMeta, inputSchema: ExtractInputSchema(), run: (i) => runExtractOp(i as never) },
   summarize: { meta: SummarizeOpMeta, inputSchema: SummarizeInputSchema(), run: (i) => runSummarizeOp(i as never) },
