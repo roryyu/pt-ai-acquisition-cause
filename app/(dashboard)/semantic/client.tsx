@@ -504,7 +504,7 @@ function ModelEditor({
   onSaved: (id: string) => void | Promise<void>;
 }) {
   const [name, setName] = useState(model?.name ?? "");
-  const [schemaName, setSchemaName] = useState(model?.schema ?? "demo");
+  const [schemaName, setSchemaName] = useState(model?.schema ?? "data");
   const [table, setTable] = useState(model?.table ?? "");
   const [timeColumn, setTimeColumn] = useState(model?.timeColumn ?? "");
   const [description, setDescription] = useState(model?.description ?? "");
@@ -623,7 +623,7 @@ function ModelEditor({
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：售后工单明细" className={cn(selectCls, "w-full")} style={controlStyle} />
         </Field>
         <Field label="Schema">
-          <input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} placeholder="demo" className={cn(selectCls, "w-full font-mono")} style={controlStyle} />
+          <input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} placeholder="data" className={cn(selectCls, "w-full font-mono")} style={controlStyle} />
         </Field>
         <Field label="表名">
           <input value={table} onChange={(e) => setTable(e.target.value)} placeholder="daily_metrics" className={cn(selectCls, "w-full font-mono")} style={controlStyle} />

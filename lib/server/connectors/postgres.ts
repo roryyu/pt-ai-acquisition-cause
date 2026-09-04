@@ -154,7 +154,7 @@ export async function introspectSchema(
   try {
     const schemas = schemaFilter
       ? [schemaFilter]
-      : ["demo", "cause", "public"];
+      : ["data", "cause", "public"];
     const tables = await client.query<{
       table_schema: string;
       table_name: string;

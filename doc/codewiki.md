@@ -343,7 +343,7 @@ POST /api/v1/ask
 ### 6.1 数据源注册与解析（datasources.ts）
 
 **内置数据源**（随环境自动可用）：
-- `data_source_demo_pg`：演示 PostgreSQL 库（`env.DATABASE_URL`，含 demo/cause/public schema）
+- `data_source_demo_pg`：演示 PostgreSQL 库（`env.DATABASE_URL`，含 data/cause/public schema）
 - `data_source_web`：互联网检索源（Bing/DuckDuckGo，无需连接串）
 
 **自定义数据源**（存于 `data_sources` 表）：
@@ -445,15 +445,15 @@ POST /api/v1/ask
 
 ### 8.2 内置语义模型
 
-5 个内置语义模型（`semantic-query.ts:90`），对应 demo 数据集：
+5 个内置语义模型（`semantic-query.ts:90`），对应 data schema 数据集：
 
 | 模型 ID | 名称 | 表 | 核心指标 | 核心维度 |
 |---------|------|-----|----------|----------|
-| `semantic_model_daily_metrics` | 经营日指标 | `demo.daily_metrics` | GMV/订单量/活跃用户/新增用户/转化率/客单价 | 区域/渠道/日期 |
-| `semantic_model_orders` | 订单明细 | `demo.orders` | 订单数/订单金额/件数/退款率 | 区域/渠道/类目/状态/下单时间 |
-| `semantic_model_products` | 商品维表 | `demo.products` | 商品数/均价/平均成本 | 类目 |
-| `semantic_model_channel_daily` | 投放渠道日指标 | `demo.channel_daily_metrics` | 花费/展示/点击/下载/注册/FD用户/FD金额/RD用户/RD金额 | 投放渠道/承接端/市场/日期 |
-| `semantic_model_channel_campaigns` | 投放计划 | `demo.channel_campaigns` | 计划数/累计花费/累计下载/累计FD用户/累计RD用户 | 投放渠道/承接端/投放目标/状态/启动日期 |
+| `semantic_model_daily_metrics` | 经营日指标 | `data.daily_metrics` | GMV/订单量/活跃用户/新增用户/转化率/客单价 | 区域/渠道/日期 |
+| `semantic_model_orders` | 订单明细 | `data.orders` | 订单数/订单金额/件数/退款率 | 区域/渠道/类目/状态/下单时间 |
+| `semantic_model_products` | 商品维表 | `data.products` | 商品数/均价/平均成本 | 类目 |
+| `semantic_model_channel_daily` | 投放渠道日指标 | `data.channel_daily_metrics` | 花费/展示/点击/下载/注册/FD用户/FD金额/RD用户/RD金额 | 投放渠道/承接端/市场/日期 |
+| `semantic_model_channel_campaigns` | 投放计划 | `data.channel_campaigns` | 计划数/累计花费/累计下载/累计FD用户/累计RD用户 | 投放渠道/承接端/投放目标/状态/启动日期 |
 
 ### 8.3 SemanticQuery → SQL 转译（translateToSql）
 

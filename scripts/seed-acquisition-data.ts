@@ -5,9 +5,9 @@
  * 覆盖 Meta / X / TikTok 三大投放渠道，经 app（应用下载）与 web（网页落地页）
  * 两个承接端，沉淀下载、注册、FD（首次充钱）、RD（再次召回充钱）全漏斗数据。
  *
- * 新增表（挂载在内置演示库 demo schema，sql_query 工具可直接查询）：
- * - demo.channel_daily_metrics  渠道×承接端×市场×日 粒度投放漏斗指标
- * - demo.channel_campaigns     投放计划维表 + 累计汇总（18 个计划）
+ * 新增表（挂载在内置演示库 data schema，sql_query 工具可直接查询）：
+ * - data.channel_daily_metrics  渠道×承接端×市场×日 粒度投放漏斗指标
+ * - data.channel_campaigns     投放计划维表 + 累计汇总（18 个计划）
  * 同时写入 cause 业务库：
  * - cause.metrics     指标口径定义（FD / RD / CPI / ROI 等，published 状态）
  * - cause.workspaces  案例工作区「流量投放渠道效果分析」
@@ -23,7 +23,7 @@
  * 7. 整体投放规模 12 个月增长约 45%，含周末上行与年末旺季季节性
  *
  * 幂等：重复执行先 DROP 目标表与案例指标/工作区再重建。
- * 注意：若重跑 scripts/seed-demo-data.ts（会 DROP 整个 demo schema），需再执行本脚本。
+ * 注意：若重跑 scripts/seed-demo-data.ts（会 DROP 整个 data schema），需再执行本脚本。
  * 运行：npx tsx scripts/seed-acquisition-data.ts
  */
 import { Pool } from "pg";
@@ -226,16 +226,16 @@ async function main() {
   try {
     console.log("→ 清理旧投放案例数据 ...");
     await client.query(`
-      DROP TABLE IF EXISTS demo.channel_campaigns CASCADE;
-      DROP TABLE IF EXISTS demo.channel_daily_metrics CASCADE;
+      DROP TABLE IF EXISTS data.channel_campaigns CASCADE;
+      DROP TABLE IF EXISTS data.channel_daily_metrics CASCADE;
       DELETE FROM cause.metrics WHERE id LIKE 'metric_acq_%';
       DELETE FROM cause.workspaces WHERE id = 'workspace_acq_demo';
     `);
-    await client.query("CREATE SCHEMA IF NOT EXISTS demo");
+    await client.query("CREATE SCHEMA IF NOT EXISTS data");
 
     console.log("→ 创建投放案例表 ...");
     await client.query(`
-      CREATE TABLE demo.channel_daily_metrics (
+      CREATE TABLE data.channel_daily_metrics (
         stat_date      DATE NOT NULL,
         ad_channel     TEXT NOT NULL,
         platform       TEXT NOT NULL,
@@ -251,10 +251,10 @@ async function main() {
         rd_amount      NUMERIC(14,2) NOT NULL,
         PRIMARY KEY (stat_date, ad_channel, platform, region)
       );
-      CREATE INDEX idx_cdm_date ON demo.channel_daily_metrics(stat_date);
-      CREATE INDEX idx_cdm_channel ON demo.channel_daily_metrics(ad_channel);
+      CREATE INDEX idx_cdm_date ON data.channel_daily_metrics(stat_date);
+      CREATE INDEX idx_cdm_channel ON data.channel_daily_metrics(ad_channel);
 
-      CREATE TABLE demo.channel_campaigns (
+      CREATE TABLE data.channel_campaigns (
         id            SERIAL PRIMARY KEY,
         campaign_no   TEXT NOT NULL UNIQUE,
         ad_channel    TEXT NOT NULL,
@@ -287,7 +287,7 @@ async function main() {
         .join(",");
       for (const row of chunk) values.push(...row);
       await client.query(
-        `INSERT INTO demo.channel_daily_metrics
+        `INSERT INTO data.channel_daily_metrics
          (stat_date, ad_channel, platform, region, spend, impressions, clicks,
           downloads, registrations, fd_users, fd_amount, rd_users, rd_amount)
          VALUES ${placeholders}`,
@@ -297,7 +297,7 @@ async function main() {
 
     console.log("→ 生成投放计划维表 channel_campaigns（3 渠道 × 2 承接端 × 3 目标 = 18 个）...");
     await client.query(`
-      INSERT INTO demo.channel_campaigns
+      INSERT INTO data.channel_campaigns
         (campaign_no, ad_channel, platform, objective, campaign_name, status,
          start_date, daily_budget, total_spend, downloads, registrations, fd_users, rd_users)
       SELECT
@@ -315,7 +315,7 @@ async function main() {
                SUM(spend) AS total_spend, SUM(downloads) AS downloads,
                SUM(registrations) AS registrations, SUM(fd_users) AS fd_users,
                SUM(rd_users) AS rd_users
-        FROM demo.channel_daily_metrics
+        FROM data.channel_daily_metrics
         GROUP BY ad_channel, platform
       ) g
       CROSS JOIN (VALUES
@@ -366,7 +366,7 @@ async function main() {
              ROUND(SUM(spend) / NULLIF(SUM(downloads), 0), 2) AS cpi,
              ROUND((SUM(fd_amount) + SUM(rd_amount)) / NULLIF(SUM(spend), 0), 3) AS roi,
              ROUND(SUM(fd_users)::numeric / NULLIF(SUM(registrations), 0), 4) AS fd_rate
-      FROM demo.channel_daily_metrics
+      FROM data.channel_daily_metrics
       GROUP BY ad_channel ORDER BY roi DESC
     `);
     console.table(byChannel.rows);
@@ -376,7 +376,7 @@ async function main() {
     }>(`
       SELECT platform, SUM(downloads) AS downloads, SUM(fd_users) AS fd, SUM(rd_users) AS rd,
              ROUND(SUM(rd_users)::numeric / NULLIF(SUM(fd_users), 0), 3) AS rd_ratio
-      FROM demo.channel_daily_metrics GROUP BY platform
+      FROM data.channel_daily_metrics GROUP BY platform
     `);
     console.table(byPlatform.rows);
 
@@ -385,7 +385,7 @@ async function main() {
              ROUND(SUM(spend)) AS spend,
              ROUND(SUM(clicks)::numeric / NULLIF(SUM(impressions), 0), 5) AS ctr,
              ROUND(SUM(fd_users)::numeric / NULLIF(SUM(registrations), 0), 4) AS fd_rate
-      FROM demo.channel_daily_metrics
+      FROM data.channel_daily_metrics
       WHERE ad_channel = 'X' AND stat_date >= '2026-01-01'
       GROUP BY 1 ORDER BY 1
     `);
@@ -395,7 +395,7 @@ async function main() {
     const tiktokCpi = await client.query<{ month: string; cpi: string }>(`
       SELECT to_char(stat_date, 'YYYY-MM') AS month,
              ROUND(SUM(spend) / NULLIF(SUM(downloads), 0), 3) AS cpi
-      FROM demo.channel_daily_metrics
+      FROM data.channel_daily_metrics
       WHERE ad_channel = 'TikTok' AND platform = 'app' AND stat_date >= '2026-03-01'
       GROUP BY 1 ORDER BY 1
     `);
@@ -405,8 +405,8 @@ async function main() {
     const totals = await client.query<{ days: string; rows: string; spend: string; campaigns: string }>(`
       SELECT COUNT(DISTINCT stat_date) AS days, COUNT(*) AS rows,
              ROUND(SUM(spend)) AS spend,
-             (SELECT COUNT(*) FROM demo.channel_campaigns) AS campaigns
-      FROM demo.channel_daily_metrics
+             (SELECT COUNT(*) FROM data.channel_campaigns) AS campaigns
+      FROM data.channel_daily_metrics
     `);
     const t = totals.rows[0]!;
     console.log(`✅ 种子完成：${t.days} 天 / ${t.rows} 行明细 / 总花费 $${Number(t.spend).toLocaleString()} / ${t.campaigns} 个投放计划`);

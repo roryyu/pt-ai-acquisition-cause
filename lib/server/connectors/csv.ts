@@ -3,7 +3,7 @@
  *
  * 供 Adjust 等外部 API 的 CSV 响应结构化使用：
  * - scripts/sync-adjust-data.ts（落库同步）
- * - api_fetch 数据算子（任务问答实时拉数）
+ * - 算子统一取数分流层（任务问答 API 源实时拉数）
  *
  * 处理细节：
  * - 剥离 UTF-8 BOM（Adjust CSV 响应带 BOM，charset=utf-8-sig）

@@ -6,7 +6,7 @@ import { executeGraphQLQuery } from "@/lib/server/connectors/api";
 import { cachedRestRequest } from "@/lib/server/connectors/api-cache";
 import { parseCsvTable, csvTableToObjects } from "@/lib/server/connectors/csv";
 import { runMcpReactAgent } from "@/lib/server/connectors/mcp";
-import { displayEndpoint, type ResolvedDataSource } from "@/lib/server/connectors/datasources";
+import { displayEndpoint, listDataSources, type ResolvedDataSource } from "@/lib/server/connectors/datasources";
 import { runOperator } from "@/lib/server/operators/registry";
 import {
   operatorMetricCatalogSummary, operatorDimensionCatalogSummary, runtimeSemanticModels,
@@ -30,7 +30,7 @@ import { nextStepId } from "./events";
 // ─── 数据分析工具 ─────────────────────────────────────────────────────────────
 
 /** 数据分析算子 ID 枚举（与 registry 数据算子保持一致） */
-const DATA_OPERATOR_IDS = ["aggregate", "timeseries", "anomaly", "filter", "transform", "join", "api_fetch"] as const;
+const DATA_OPERATOR_IDS = ["aggregate", "timeseries", "anomaly", "filter", "transform", "join"] as const;
 
 /** run_operator 工具描述：算子清单 + 指标/维度目录（由语义层动态生成，缺省内置模型） */
 export function runOperatorToolDescription(models?: SemanticModelDef[]): string {
@@ -41,8 +41,8 @@ export function runOperatorToolDescription(models?: SemanticModelDef[]): string 
 - filter 条件下钻：input {model, filters?(维度Id到维度值的对象，如 {"ad_channel":"Meta"}), from?, to?}，按模型全维度分组输出全部指标，用于下钻验证
 - transform 派生指标：input {from?, to?}，按月输出投放归因派生指标：CPI（花费/下载）、CPM、CTR、点击注册率、FD 率、RD 率、ROI（充值金额/花费）
 - join 跨源关联：input {from?, to?}，投放日汇总 × 投放计划表，按渠道×承接端对比实际效果与计划累计口径
-- api_fetch 外部 API 取数：input {sourceId, path, dimensions, metrics, datePeriod, filters?, sortBy?, limit?}，从 API 数据源（如 Adjust 报告服务）拉取报告并结构化为表格，经查询缓存与限流；仅当本地表无所需数据（如需实时/细粒度外部数据）时使用
-可用指标（metric 参数取值）：
+所有算子只按「语义指标 key + 维度 id」取数：数据源路由（本地 PG 库 / 外部 API 源的本地缓存+API 直查）由算子依据指标所属数据源自动决定，你无需也不能指定 sourceId、path 或上游 slug。查外部 API 源（如 Adjust）的最新或明细数据同样用 aggregate、filter——指定语义指标 key 与维度 id 即可，目标日期超出本地范围时算子会自动直连 API 取回。
+可用指标（metric 参数取值·各数据源平等构成统一数据集合）。指标 id 若形如「表名.指标」（如 adjust_daily_metrics.impressions）表示该指标同时存在于多个数据源，须带表名限定精确指定来源；裸 id（如 spend）表示全局唯一。同名指标分属不同源时是彼此独立的数据（如 BI 同步的 channel_daily_metrics.impressions 与 Adjust 归因的 adjust_daily_metrics.impressions），按需分别取用、交叉验证，不假设哪个优先：
 ${operatorMetricCatalogSummary(models)}
 各模型可用维度（aggregate 的 groupBy / filter 的 filters 键）：
 ${operatorDimensionCatalogSummary(models)}
@@ -108,7 +108,7 @@ export function createRunOperatorTool(ctx: AgentRunContext, description?: string
       name: "run_operator",
       description: description ?? runOperatorToolDescription(),
       schema: z.object({
-        operatorId: z.enum(DATA_OPERATOR_IDS).describe("算子 ID：aggregate/timeseries/anomaly/filter/transform/join/api_fetch"),
+        operatorId: z.enum(DATA_OPERATOR_IDS).describe("算子 ID：aggregate/timeseries/anomaly/filter/transform/join"),
         input: z.record(
           z.string(),
           z.union([z.string(), z.number(), z.boolean(), z.record(z.string(), z.string())]),
@@ -118,7 +118,7 @@ export function createRunOperatorTool(ctx: AgentRunContext, description?: string
   );
 }
 
-/** 只读 SQL 查询（demo schema） */
+/** 只读 SQL 查询（data schema） */
 export function createSqlQueryTool(ctx: AgentRunContext) {
   return tool(
     async (input: { sql: string }) => {
@@ -129,7 +129,7 @@ export function createSqlQueryTool(ctx: AgentRunContext) {
         const result = await executeReadOnlyQuery(env.DATABASE_URL, input.sql, {
           maxRows: 300,
           timeoutMs: 20_000,
-          schema: "demo",
+          schema: "data",
         });
         ctx.dataFindings.sql.push(input.sql);
         // 自动把结果注册为表格（≤ 60 行时展示）
@@ -164,7 +164,7 @@ export function createSqlQueryTool(ctx: AgentRunContext) {
     },
     {
       name: "sql_query",
-      description: `对内置演示数据库（PostgreSQL）执行只读 SELECT 查询。当前 search_path=demo。可用表：daily_metrics(stat_date,region,channel,gmv,orders,active_users,new_users,conversion_rate,avg_order_value)、orders(order_no,user_id,region,channel,category,product_id,amount,quantity,status,created_at)、products(name,category,price,cost)、regions(name,tier)、channel_daily_metrics(stat_date,ad_channel,platform,region,spend,impressions,clicks,downloads,registrations,fd_users,fd_amount,rd_users,rd_amount；投放渠道效果分析：ad_channel取值Meta/X/TikTok，platform取值app/web，fd=首次充钱，rd=召回再充钱)、channel_campaigns(campaign_no,ad_channel,platform,objective,campaign_name,status,start_date,daily_budget,total_spend,downloads,registrations,fd_users,rd_users)。日期列 daily_metrics.stat_date 与 channel_daily_metrics.stat_date 为 DATE 类型。仅允许单条 SELECT/WITH 语句。`,
+      description: `对 PostgreSQL 数据库执行只读 SELECT 查询（search_path=data，汇集各数据源同步入库的表，所有表平等可查）。常用表：daily_metrics(stat_date,region,channel,gmv,orders,active_users,new_users,conversion_rate,avg_order_value)、orders(order_no,user_id,region,channel,category,product_id,amount,quantity,status,created_at)、products(name,category,price,cost)、regions(name,tier)、channel_daily_metrics(stat_date,ad_channel,platform,region,spend,impressions,clicks,downloads,registrations,fd_users,fd_amount,rd_users,rd_amount；投放渠道效果分析：ad_channel取值Meta/X/TikTok，platform取值app/web，fd=首次充钱，rd=召回再充钱)、channel_campaigns(campaign_no,ad_channel,platform,objective,campaign_name,status,start_date,daily_budget,total_spend,downloads,registrations,fd_users,rd_users)。此外数据字典中列出的其他表（如 Adjust 同步入库的 adjust_daily_metrics：stat_date,network,country_code,impressions,clicks,installs,sessions,register_cnt,first_deposit_cnt,recall_deposit_cnt,network_cost）同样可查询，完整表/列结构用 inspect_schema 确认。日期类 stat_date 列为 DATE 类型。仅允许单条 SELECT/WITH 语句。`,
       schema: z.object({
         sql: z.string().describe("只读 SQL 查询语句（SELECT 或 WITH 开头）"),
       }),
@@ -180,11 +180,11 @@ export function createInspectSchemaTool(ctx: AgentRunContext) {
       ctx.sink({ type: "tool_call", stepId, tool: "inspect_schema", input });
       try {
         if (input.table) {
-          const tables = await introspectSchema(env.DATABASE_URL, "demo");
+          const tables = await introspectSchema(env.DATABASE_URL, "data");
           const target = tables.find((t) => t.table === input.table);
           if (!target) {
             ctx.sink({ type: "tool_result", stepId, tool: "inspect_schema", summary: `表 ${input.table} 不存在` });
-            return JSON.stringify({ error: `表 demo.${input.table} 不存在`, available: tables.map((t) => t.table) });
+            return JSON.stringify({ error: `表 data.${input.table} 不存在`, available: tables.map((t) => t.table) });
           }
           ctx.sink({
             type: "tool_result", stepId, tool: "inspect_schema",
@@ -192,10 +192,10 @@ export function createInspectSchemaTool(ctx: AgentRunContext) {
           });
           return JSON.stringify(target);
         }
-        const tables = await introspectSchema(env.DATABASE_URL, "demo");
+        const tables = await introspectSchema(env.DATABASE_URL, "data");
         ctx.sink({
           type: "tool_result", stepId, tool: "inspect_schema",
-          summary: `demo schema 共 ${tables.length} 张表`,
+          summary: `data schema 共 ${tables.length} 张表`,
         });
         return JSON.stringify(tables.map((t) => ({
           table: t.table, columns: t.columns.map((c) => `${c.name}:${c.dataType}`),
@@ -208,7 +208,7 @@ export function createInspectSchemaTool(ctx: AgentRunContext) {
     },
     {
       name: "inspect_schema",
-      description: "查看演示数据库 demo schema 的表结构：不传 table 返回所有表概览；传 table 返回该表列名与类型。",
+      description: "查看 data schema 的表结构：不传 table 返回所有表概览；传 table 返回该表列名与类型。",
       schema: z.object({
         table: z.string().optional().describe("表名（可选），如 daily_metrics"),
       }),
@@ -535,7 +535,7 @@ export function createApiSourceTool(ctx: AgentRunContext, sources: ResolvedDataS
     },
     {
       name: "query_api_source",
-      description: `调用已注册的外部 API 数据源获取数据（只读，经查询缓存与限流，命中缓存不消耗上游配额）。REST 源传 path/method/params/body，CSV 响应自动结构化为表格；GraphQL 源传 graphqlQuery/variables（禁止 mutation）。整个任务最多调用 6 次。报告类取数优先用 run_operator 的 api_fetch 算子。可用数据源：\n${externalSourcesSummary(apiSources)}`,
+      description: `调用已注册的外部 API 数据源获取数据（只读，经查询缓存与限流，命中缓存不消耗上游配额）。REST 源传 path/method/params/body，CSV 响应自动结构化为表格；GraphQL 源传 graphqlQuery/variables（禁止 mutation）。整个任务最多调用 6 次。注意：已建模的报告类指标/维度取数应优先用 run_operator（aggregate/filter 会依据指标所属数据源自动直连对应 API 源），本工具仅用于语义层未建模的自由 API 探索。可用数据源：\n${externalSourcesSummary(apiSources)}`,
       schema: z.object({
         sourceId: z.string().describe("数据源 ID（见工具描述中的可用数据源）"),
         path: z.string().optional().describe("REST：拼接到 endpoint 之后的相对路径，如 csv_report（endpoint 已含基础路径时勿重复）"),
@@ -609,16 +609,60 @@ export function semanticContextForPrompt(): string {
 
 export function demoTablesHint(): string {
   return DEMO_SEMANTIC_MODELS.map(
-    (m) => `- demo.${m.table}（${m.name}）：${m.dimensions.map((d) => d.id).join(", ")} | 指标：${m.metrics.map((x) => x.id).join(", ")}`,
+    (m) => `- data.${m.table}（${m.name}）：${m.dimensions.map((d) => d.id).join(", ")} | 指标：${m.metrics.map((x) => x.id).join(", ")}`,
   ).join("\n");
 }
 
-/** 数据字典（运行时全量语义模型：内置 + DB 自定义，如 Adjust 投放日指标） */
+/**
+ * 单表数据新鲜度：时间列的 MIN/MAX + 行数。
+ * 无时间列（如 products 用 id）或查询失败（表不存在等）返回 null，降级为不标注，不阻断数据字典生成。
+ */
+async function queryTableFreshness(
+  schema: string, table: string, timeColumn: string,
+): Promise<{ count: number; min: string; max: string } | null> {
+  if (timeColumn === "id") return null; // 非时间列，无新鲜度语义
+  const safe = (s: string) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s);
+  if (!safe(schema) || !safe(table) || !safe(timeColumn)) return null;
+  try {
+    const sql = `SELECT COUNT(*)::int AS n, MIN("${timeColumn}")::text AS lo, MAX("${timeColumn}")::text AS hi FROM "${schema}"."${table}"`;
+    const r = await executeReadOnlyQuery(env.DATABASE_URL, sql, { maxRows: 1, timeoutMs: 5_000, schema });
+    const row = r.rows[0] as { n?: number; lo?: string; hi?: string } | undefined;
+    if (!row) return null;
+    return { count: Number(row.n ?? 0), min: String(row.lo ?? ""), max: String(row.hi ?? "") };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 数据字典（运行时全量语义模型：内置 + DB 自定义，如 Adjust 投放日指标）
+ *
+ * 关键：为每张表注入「本地数据新鲜度」（时间范围 + 行数）与「来源血缘」，让 LLM 能判断
+ * 用户所问日期是否已被本地快照覆盖——本地范围外（如问今天/昨天但表只同步到更早）时，
+ * aggregate/filter 会依据指标所属数据源自动直连其 API 源取最新，而非用陈旧或空的本地数据作答。
+ */
 export async function runtimeTablesHint(): Promise<string> {
   const models = await runtimeSemanticModels();
-  return models
-    .map(
-      (m) => `- ${m.schema}.${m.table}（${m.name}）：${m.dimensions.map((d) => d.id).join(", ")} | 指标：${m.metrics.map((x) => x.id).join(", ")}`,
-    )
-    .join("\n");
+  const sources = await listDataSources().catch(() => [] as Array<ResolvedDataSource & { status: string }>);
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const lines = await Promise.all(
+    models.map(async (m) => {
+      const dims = m.dimensions.map((d) => d.id).join(", ");
+      const mets = m.metrics.map((x) => x.id).join(", ");
+      let line = `- ${m.schema}.${m.table}（${m.name}）：${dims} | 指标：${mets}`;
+      const fresh = await queryTableFreshness(m.schema, m.table, m.timeColumn);
+      if (fresh) {
+        line += fresh.count === 0
+          ? ` | ⚠️ 本地暂无数据（0 行，尚未同步）`
+          : ` | 本地数据范围：${fresh.min.slice(0, 10)} ~ ${fresh.max.slice(0, 10)}（${fresh.count} 行）`;
+      }
+      // 血缘：关联外部 API 源的本地表，范围外由算子（aggregate/filter）自动直连该源补取最新
+      const src = m.dataSourceId ? sourceById.get(m.dataSourceId) : undefined;
+      if (src?.type === "api") {
+        line += ` | 数据由「${src.name}」API 同步入库；查本地范围外的最新/明细数据仍用 aggregate、filter 指定该表的语义指标 key 与维度 id，算子会自动直连该 API 源（经本地缓存+API 直查）取回，无需关心 sourceId/path/上游 slug`;
+      }
+      return line;
+    }),
+  );
+  return lines.join("\n");
 }

@@ -12,7 +12,7 @@
 | 前端 | Next.js 16 + React 19 + Tailwind CSS 4 + Recharts + tldraw | 问答/研究/画布/算子中心等 7 个页面 |
 | Agent 框架 | LangChain + LangGraph（StateGraph / createReactAgent） | 多 Agent 编排与 ReAct 工具循环 |
 | 模型接入 | 统一模型网关（OpenAI 协议，主备自动降级） | 所有 LLM 调用经同一出口 |
-| 数据库 | PostgreSQL + Prisma 7 | 平台库 + 演示数据库（demo schema） |
+| 数据库 | PostgreSQL + Prisma 7 | 平台库 + 演示数据库（data schema） |
 | 实时输出 | SSE（Server-Sent Events）统一事件协议 | Agent 每一步动作实时推送前端 |
 | 校验 | Zod | API 入参、算子入参、语义查询结构全部强校验 |
 
@@ -123,7 +123,7 @@ graph LR
 
 | 工具 | 能力 | 安全护栏 |
 |---|---|---|
-| `sql_query` | 对 demo schema 执行只读 SQL | **仅允许单条 SELECT/WITH**；statement_timeout 20s；最多 300 行；结果自动注册为前端表格 |
+| `sql_query` | 对 data schema 执行只读 SQL | **仅允许单条 SELECT/WITH**；statement_timeout 20s；最多 300 行；结果自动注册为前端表格 |
 | `inspect_schema` | 内省库表结构（列名/类型） | 防止模型瞎猜列名 |
 | `show_table` | 主动展示结构化表格 | ≤100 行 |
 | `generate_chart` | 生成 ChartSpec（bar/line/area/pie/radar），前端 Recharts 渲染 | ≤200 数据点 |

@@ -101,7 +101,7 @@ async function throttle(sourceId: string): Promise<void> {
 }
 
 /**
- * 带缓存与限流的 REST 请求（query_api_source 工具与 api_fetch 算子的统一入口）
+ * 带缓存与限流的 REST 请求（query_api_source 工具与算子统一取数分流层的统一入口）
  * 缓存读写失败时降级为直连（console.warn，不阻断调用）
  */
 export async function cachedRestRequest(

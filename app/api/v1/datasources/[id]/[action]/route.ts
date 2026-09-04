@@ -22,7 +22,7 @@ export const maxDuration = 120;
 /** SQL 查询请求 */
 const QueryRequestSchema = z.object({
   sql: z.string().min(1, "SQL 不能为空").max(8000),
-  schema: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, "schema 名非法").default("demo"),
+  schema: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, "schema 名非法").default("data"),
   maxRows: z.number().int().min(1).max(300).default(100),
 });
 
@@ -225,7 +225,7 @@ export async function GET(
       if (source.type !== "bi") {
         throw new ApiError(400, "UNSUPPORTED", `${source.type} 数据源不支持表预览`);
       }
-      const schema = url.searchParams.get("schema") ?? "demo";
+      const schema = url.searchParams.get("schema") ?? "data";
       const table = url.searchParams.get("table") ?? "";
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
       if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {

@@ -60,6 +60,8 @@ export interface MetricField {
   agg: "sum" | "avg" | "count" | "max" | "min" | "none";
   unit?: string;
   description: string;
+  /** 上游 API 数据源的指标 slug（API 源直查时算子自动使用；缺省视为与 id 相同，如本地 register_cnt → Adjust register_events） */
+  apiSlug?: string;
 }
 
 /** 维度字段定义 */
@@ -69,6 +71,8 @@ export interface DimensionField {
   column: string;
   values?: string[];
   description: string;
+  /** 上游 API 数据源的维度 slug（如本地 stat_date → Adjust day）；缺省视为与 id 相同 */
+  apiSlug?: string;
 }
 
 /** 语义模型：一张物理表的业务视图 */
@@ -81,17 +85,23 @@ export interface SemanticModelDef {
   metrics: MetricField[];
   dimensions: DimensionField[];
   description: string;
+  /** 关联数据源 ID：DB 自定义模型指向其来源（如 Adjust API 源）；种子模型为空表示内置经营库 */
+  dataSourceId?: string | null;
 }
 
 /**
- * 内置语义模型（demo 数据集，design.md 6.4.2 SemanticModelV1）
- * 由 scripts/seed-demo-data.ts 生成，指标与维度对齐业务口径
+ * 默认种子语义模型（design.md 6.4.2 SemanticModelV1）
+ *
+ * 对应 data schema 中的经营/投放表——这些表并非“演示专用”，而是各数据源
+ * （BI 中间表、投放渠道日汇总等）同步入库的统一落地位置，与任何自定义模型
+ * （如 Adjust 查询入库表）平级、无优先，共同构成一个统一数据集合。
+ * 表结构由 scripts/seed-demo-data.ts 初始化，指标与维度对齐业务口径。
  */
 export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   {
     id: "semantic_model_daily_metrics",
     name: "经营日指标",
-    schema: "demo",
+    schema: "data",
     table: "daily_metrics",
     timeColumn: "stat_date",
     description: "区域×渠道×日 粒度的经营核心指标，覆盖 GMV、订单、用户、转化率",
@@ -112,7 +122,7 @@ export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   {
     id: "semantic_model_orders",
     name: "订单明细",
-    schema: "demo",
+    schema: "data",
     table: "orders",
     timeColumn: "created_at",
     description: "订单粒度明细（抽样），支持类目/状态分析与退款率计算",
@@ -133,7 +143,7 @@ export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   {
     id: "semantic_model_products",
     name: "商品维表",
-    schema: "demo",
+    schema: "data",
     table: "products",
     timeColumn: "id",
     description: "商品基础信息（类目/价格/成本），支持毛利与价格带分析",
@@ -149,7 +159,7 @@ export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   {
     id: "semantic_model_channel_daily",
     name: "投放渠道日指标",
-    schema: "demo",
+    schema: "data",
     table: "channel_daily_metrics",
     timeColumn: "stat_date",
     description: "投放渠道×承接端×市场×日 粒度的买量漏斗指标，覆盖花费、展示、点击、下载、注册、FD（首次充钱）、RD（再次召回充钱）",
@@ -174,7 +184,7 @@ export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   {
     id: "semantic_model_channel_campaigns",
     name: "投放计划",
-    schema: "demo",
+    schema: "data",
     table: "channel_campaigns",
     timeColumn: "start_date",
     description: "投放计划维表与累计效果（渠道×承接端×投放目标），含累计花费/下载/FD/RD",
@@ -195,7 +205,7 @@ export const DEMO_SEMANTIC_MODELS: SemanticModelDef[] = [
   },
 ];
 
-/** 汇总模型的可查询列（供 NL 解析白名单校验，默认仅内置模型） */
+/** 汇总模型的可查询列（供 NL 解析白名单校验，默认仅种子模型） */
 export function semanticContextSummary(models: SemanticModelDef[] = DEMO_SEMANTIC_MODELS): string {
   return models.map((m) => {
     const metrics = m.metrics.map((x) => `${x.id}(${x.name}, ${x.agg}, ${x.description})`).join("; ");
@@ -228,7 +238,7 @@ export interface TranslatedQuery {
  * - 维度 → GROUP BY 列（时间维度按粒度截断）
  * - 过滤 → WHERE 条件（操作符映射 + 参数内联前做类型净化）
  * - 时间范围 → 时间列 BETWEEN
- * models 缺省为内置模型；调用方可传入内置 + DB 自定义的全量模型列表
+ * models 缺省为种子模型；调用方可传入种子 + DB 自定义的全量模型列表（彼此平级）
  */
 export function translateToSql(
   query: SemanticQueryV1,

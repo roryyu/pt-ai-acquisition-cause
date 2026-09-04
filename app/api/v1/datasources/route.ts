@@ -59,9 +59,15 @@ export async function GET(request: Request) {
         status: s.status,
         createdAt: s.createdAt ?? null,
         endpoint: displayEndpoint(s),
-        // api 源附带协议等非敏感元信息，供前端按协议渲染控制台
+        // api 源附带协议等非敏感元信息，供前端按协议渲染控制台；
+        // authConfigured 透出凭证是否已配置（脱敏布尔值，凭证本身仅存服务端不回显）
         meta: s.type === "api" && s.apiConfig
-          ? { protocol: s.apiConfig.protocol, authType: s.apiConfig.authType }
+          ? {
+              protocol: s.apiConfig.protocol,
+              authType: s.apiConfig.authType,
+              authConfigured:
+                s.apiConfig.authType === "none" || Boolean(s.apiConfig.authToken),
+            }
           : null,
       })),
     });

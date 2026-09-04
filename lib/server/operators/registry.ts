@@ -7,7 +7,6 @@ import {
   FilterOpMeta, runFilterOp, FilterInput,
   TransformOpMeta, runTransformOp, TransformInput,
   JoinOpMeta, runJoinOp, JoinInput,
-  ApiFetchOpMeta, runApiFetchOp, ApiFetchInput,
 } from "./data-operators";
 import {
   SearchOpMeta, runSearchOp,
@@ -40,7 +39,6 @@ const REGISTRY: Record<string, RegisteredOperator> = {
   filter: { meta: FilterOpMeta, inputSchema: FilterInput, run: (i) => runFilterOp(i as never) },
   transform: { meta: TransformOpMeta, inputSchema: TransformInput, run: (i) => runTransformOp(i as never) },
   join: { meta: JoinOpMeta, inputSchema: JoinInput, run: (i) => runJoinOp(i as never) },
-  api_fetch: { meta: ApiFetchOpMeta, inputSchema: ApiFetchInput, run: (i) => runApiFetchOp(i as never) },
   search: { meta: SearchOpMeta, inputSchema: SearchInputSchema(), run: (i) => runSearchOp(i as never) as Promise<OperatorRunResult> },
   extract: { meta: ExtractOpMeta, inputSchema: ExtractInputSchema(), run: (i) => runExtractOp(i as never) },
   summarize: { meta: SummarizeOpMeta, inputSchema: SummarizeInputSchema(), run: (i) => runSummarizeOp(i as never) },

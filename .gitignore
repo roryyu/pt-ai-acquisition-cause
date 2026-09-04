@@ -28,3 +28,6 @@ prisma/dev.db*
 # 洞察画布运行时产物：邮件落盘 mock 与导出 PNG 存档
 .deliveries/
 public/exports/
+
+# 数据库备份（含业务数据，不入库）
+backups/

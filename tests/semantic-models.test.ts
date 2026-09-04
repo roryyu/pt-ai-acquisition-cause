@@ -37,7 +37,7 @@ function withParams(handler: (request: Request, ctx: { params: Promise<{ id: str
 
 const validBody = {
   name: "售后工单",
-  tableRef: "demo.tickets",
+  tableRef: "data.tickets",
   timeColumn: "created_at",
   description: "售后工单明细",
   metrics: [{ id: "ticket_count", name: "工单数", column: "id", agg: "count", description: "工单条数" }],
@@ -53,7 +53,7 @@ describe("POST /api/v1/semantic/models 新建语义模型", () => {
       id: "semantic_model_new",
       name: validBody.name,
       dataSourceId: null,
-      tableRef: "demo.tickets",
+      tableRef: "data.tickets",
       fields: {},
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -94,7 +94,7 @@ describe("POST /api/v1/semantic/models 新建语义模型", () => {
     expect(createMock).toHaveBeenCalledOnce();
     const data = (createMock.mock.calls[0]![0] as { data: { dataSourceId: string | null; tableRef: string } }).data;
     expect(data.dataSourceId).toBeNull();
-    expect(data.tableRef).toBe("demo.tickets");
+    expect(data.tableRef).toBe("data.tickets");
   });
 
   it("指定内置 demo 数据源同样归一化为 null", async () => {
@@ -131,7 +131,7 @@ describe("PUT /api/v1/semantic/models/[id] 更新语义模型", () => {
       id: "semantic_model_x",
       name: "旧名",
       dataSourceId: null,
-      tableRef: "demo.tickets",
+      tableRef: "data.tickets",
       fields: {
         description: "旧描述",
         timeColumn: "created_at",
@@ -145,7 +145,7 @@ describe("PUT /api/v1/semantic/models/[id] 更新语义模型", () => {
       id: "semantic_model_x",
       name: "新名",
       dataSourceId: null,
-      tableRef: "demo.tickets",
+      tableRef: "data.tickets",
       fields: {},
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -185,7 +185,7 @@ describe("translateToSql 支持自定义模型列表", () => {
   const customModel: SemanticModelDef = {
     id: "semantic_model_tickets",
     name: "售后工单",
-    schema: "demo",
+    schema: "data",
     table: "tickets",
     timeColumn: "created_at",
     description: "售后工单明细",
@@ -205,7 +205,7 @@ describe("translateToSql 支持自定义模型列表", () => {
       [customModel],
     );
     expect(model.id).toBe("semantic_model_tickets");
-    expect(sql).toContain('FROM "demo"."tickets"');
+    expect(sql).toContain('FROM "data"."tickets"');
     expect(sql).toContain('COUNT("id")');
     // 标准子句顺序：WHERE 先于 GROUP BY
     expect(sql.indexOf("GROUP BY")).toBeGreaterThan(-1);

@@ -85,6 +85,22 @@ export interface ApiTestResult {
   latencyMs: number;
   statusCode?: number;
   error?: string;
+  /** endpoint 可达但存在异常语义时的诊断提示（如 401 认证被拒、400 缺必填参数） */
+  hint?: string;
+}
+
+/** REST 探测状态码 → 诊断提示（endpoint 可达但认证/参数异常时帮助定位，缺 token 时上游实际返 401 而非 400） */
+function restTestHint(status: number): string | undefined {
+  if (status === 401 || status === 403) {
+    return `endpoint 可达但认证被拒（HTTP ${status}）：请检查认证方式与 API Token 是否已配置且有效`;
+  }
+  if (status === 400) {
+    return "endpoint 可达但探测请求被拒（HTTP 400）：endpoint 指向具体接口时通常为缺少必填参数（如 date_period），请在请求台带参验证";
+  }
+  if (status === 404) {
+    return "根路径探测 404（未能验证认证有效性）：请在下方请求台用真实路径与参数验证";
+  }
+  return undefined;
 }
 
 /** 连通性测试：GraphQL 发 __typename 探测；REST 发 GET（status < 500 即视为可达） */
@@ -107,7 +123,11 @@ export async function testApiSource(config: ApiSourceConfig): Promise<ApiTestRes
         kind: "graphql",
         latencyMs: Date.now() - start,
         statusCode: result.status,
-        error: ok ? undefined : `GraphQL endpoint 返回 HTTP ${result.status}`,
+        error: ok
+          ? undefined
+          : result.status === 401 || result.status === 403
+            ? `GraphQL endpoint 返回 HTTP ${result.status}（认证被拒，请检查 API Token 是否已配置且有效）`
+            : `GraphQL endpoint 返回 HTTP ${result.status}`,
       };
     }
     const result = await fetchWithLimits(config.endpoint, {
@@ -121,6 +141,7 @@ export async function testApiSource(config: ApiSourceConfig): Promise<ApiTestRes
       latencyMs: Date.now() - start,
       statusCode: result.status,
       error: ok ? undefined : `endpoint 返回 HTTP ${result.status}`,
+      hint: restTestHint(result.status),
     };
   } catch (error) {
     return {

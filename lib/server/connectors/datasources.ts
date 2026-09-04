@@ -7,7 +7,7 @@ import type { McpSourceConfig } from "./mcp";
  * 数据源注册与解析（design.md 5.1 数据接入层）
  *
  * 内置数据源（平台随环境自动可用）：
- * - demo_pg：演示 PostgreSQL 库（env.DATABASE_URL，含 demo/cause/public schema）
+ * - demo_pg：演示 PostgreSQL 库（env.DATABASE_URL，含 data/cause/public schema）
  * - web：互联网检索源（Bing/DuckDuckGo，无需连接串）
  *
  * 自定义数据源（存于 data_sources 表）：

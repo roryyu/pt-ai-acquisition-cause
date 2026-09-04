@@ -24,7 +24,7 @@ interface DataSourceItem {
   status: string;
   createdAt: string | null;
   endpoint: string;
-  meta: { protocol: "rest" | "graphql"; authType: string } | null;
+  meta: { protocol: "rest" | "graphql"; authType: string; authConfigured: boolean } | null;
 }
 
 interface TableMetaItem {
@@ -60,7 +60,7 @@ export function DataSourcesClient() {
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   // SQL 查询台
-  const [sql, setSql] = useState("SELECT region, SUM(gmv)::numeric(14,2) AS gmv\nFROM demo.daily_metrics\nWHERE stat_date >= '2026-01-01'\nGROUP BY region\nORDER BY gmv DESC");
+  const [sql, setSql] = useState("SELECT region, SUM(gmv)::numeric(14,2) AS gmv\nFROM data.daily_metrics\nWHERE stat_date >= '2026-01-01'\nGROUP BY region\nORDER BY gmv DESC");
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
   const [queryError, setQueryError] = useState("");
@@ -103,10 +103,15 @@ export function DataSourcesClient() {
         } else if (d.kind === "mcp") {
           text = `连接正常 · MCP 代理可用 · 发现 ${d.toolCount} 个工具`;
         } else if (d.kind === "rest" || d.kind === "graphql") {
-          text = `连接正常 · ${d.kind === "graphql" ? "GraphQL" : "REST"} endpoint 可达（HTTP ${d.statusCode}）· 延迟 ${d.latencyMs}ms`;
+          // 401/403：endpoint 可达但认证被拒（如 token 缺失/失效），不再误报为“连接正常”
+          const authRejected = d.statusCode === 401 || d.statusCode === 403;
+          text = authRejected
+            ? `认证被拒（HTTP ${d.statusCode}）：请检查认证方式与 API Token 是否已配置且有效`
+            : `连接正常 · ${d.kind === "graphql" ? "GraphQL" : "REST"} endpoint 可达（HTTP ${d.statusCode}）· 延迟 ${d.latencyMs}ms`;
         } else {
           text = `连接正常 · ${d.serverVersion ?? "PostgreSQL"} · 延迟 ${d.latencyMs}ms · schema: ${(d.schemas ?? []).join(", ")}`;
         }
+        if (d.hint) text += `\n${d.hint}`;
         setTestResult(text);
       } else {
         setTestResult(`连接失败：${json.error?.message ?? "未知错误"}`);
@@ -172,7 +177,7 @@ export function DataSourcesClient() {
       const res = await fetch(`/api/v1/datasources/${selectedId}/query`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sql, schema: "demo", maxRows: 200 }),
+        body: JSON.stringify({ sql, schema: "data", maxRows: 200 }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -281,6 +286,12 @@ export function DataSourcesClient() {
                     <CheckCircle2 size={11} />
                     {s.status === "active" ? "可用" : "配置缺失"}
                   </span>
+                  {/* api 源凭证未配置时透出警告（调用受保护接口将 401） */}
+                  {!s.builtin && s.type === "api" && s.meta && !s.meta.authConfigured && (
+                    <span className="text-xs font-medium" style={{ color: "var(--warning)" }}>
+                      认证未配置
+                    </span>
+                  )}
                 </div>
               </div>
             ))
@@ -311,14 +322,14 @@ export function DataSourcesClient() {
             </div>
             {testResult && (
               <p
-                className="mt-3 flex items-center gap-1.5 rounded-[8px] px-3 py-2 text-xs"
+                className="mt-3 flex items-start gap-1.5 whitespace-pre-line rounded-[8px] px-3 py-2 text-xs"
                 style={{
                   background: testResult.startsWith("连接正常") ? "var(--success-pale)" : "var(--danger-pale)",
                   color: testResult.startsWith("连接正常") ? "var(--success)" : "var(--danger)",
                 }}
               >
                 {testResult.startsWith("连接正常") ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                {testResult}
+                <span>{testResult}</span>
               </p>
             )}
           </section>
@@ -431,7 +442,7 @@ export function DataSourcesClient() {
                 />
                 <div className="mt-3 flex items-center justify-between">
                   <p className="text-xs" style={{ color: "var(--muted)" }}>
-                    执行于 {selected?.name}（search_path=demo，超时 20s，最多 200 行）
+                    执行于 {selected?.name}（search_path=data，超时 20s，最多 200 行）
                   </p>
                   <button
                     onClick={runQuery}
@@ -465,7 +476,12 @@ export function DataSourcesClient() {
             </>
           )}
 
-          {selected?.type === "api" && <ApiSourcePanel key={selected.id} source={selected} />}
+          {selected?.type === "api" && (
+            <>
+              <ApiAuthPanel key={selected.id} source={selected} onSaved={loadSources} />
+              <ApiSourcePanel key={selected.id} source={selected} />
+            </>
+          )}
 
           {selected?.type === "mcp" && <McpSourcePanel key={selected.id} source={selected} />}
 
@@ -770,6 +786,159 @@ function CreateSourceForm({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// ─── API 数据源认证配置 ─────────────────────────────────────────────────────
+
+const AUTH_TYPE_LABELS: Record<string, string> = {
+  none: "无需认证",
+  bearer: "Bearer Token",
+  api_key: "API Key（Header）",
+  basic: "Basic Auth",
+};
+
+/**
+ * api 数据源认证配置卡：API Token 配置/更新入口（经 PUT /api/v1/datasources/[id]）。
+ * 凭证仅存服务端不回显：已配置时输入框留空表示保留原值，输入新值则覆盖。
+ */
+function ApiAuthPanel({ source, onSaved }: { source: DataSourceItem; onSaved: () => void }) {
+  const [authType, setAuthType] = useState<"none" | "bearer" | "api_key" | "basic">(
+    (source.meta?.authType as "none" | "bearer" | "api_key" | "basic") ?? "none",
+  );
+  const [authToken, setAuthToken] = useState("");
+  const [apiKeyHeader, setApiKeyHeader] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [savedAt, setSavedAt] = useState(0);
+
+  const configured = source.meta?.authConfigured ?? true;
+  const typeChanged = authType !== (source.meta?.authType ?? "none");
+
+  const save = useCallback(async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const payload: Record<string, unknown> = { authType };
+      if (authType !== "none" && authToken.trim()) payload.authToken = authToken.trim();
+      if (authType === "api_key" && apiKeyHeader.trim()) payload.apiKeyHeader = apiKeyHeader.trim();
+      const res = await fetch(`/api/v1/datasources/${source.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSavedAt(Date.now());
+        setAuthToken("");
+        onSaved();
+      } else {
+        setError(json.error?.message ?? "保存失败");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "网络异常");
+    } finally {
+      setSaving(false);
+    }
+  }, [source.id, authType, authToken, apiKeyHeader, onSaved]);
+
+  return (
+    <section
+      className="rounded-[var(--radius-sm)] border p-5"
+      style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+    >
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-bold" style={{ color: "var(--ink)" }}>
+          <Shield size={15} style={{ color: "var(--purple)" }} />
+          认证配置 · {source.name}
+        </h2>
+        <span
+          className="rounded-full px-2 py-px text-xs"
+          style={{
+            background: configured ? "var(--success-pale)" : "var(--danger-pale)",
+            color: configured ? "var(--success)" : "var(--danger)",
+          }}
+        >
+          {AUTH_TYPE_LABELS[source.meta?.authType ?? "none"]} · {configured ? "凭证已配置" : "凭证未配置"}
+        </span>
+      </div>
+
+      {!configured && (
+        <p className="mt-2 text-xs" style={{ color: "var(--danger)" }}>
+          当前认证方式下凭证未配置：调用受保护接口将返回 401，请填写凭证后保存
+        </p>
+      )}
+
+      <div className="mt-3 grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <select
+            value={authType}
+            onChange={(e) => setAuthType(e.target.value as typeof authType)}
+            className={inputCls}
+            style={inputStyle}
+          >
+            <option value="none">无需认证</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="api_key">API Key（Header）</option>
+            <option value="basic">Basic Auth</option>
+          </select>
+          {authType === "api_key" && (
+            <input
+              value={apiKeyHeader}
+              onChange={(e) => setApiKeyHeader(e.target.value)}
+              placeholder="Header 名（默认 X-API-Key）"
+              className={monoInputCls}
+              style={inputStyle}
+            />
+          )}
+        </div>
+        {authType !== "none" && (
+          <input
+            value={authToken}
+            onChange={(e) => setAuthToken(e.target.value)}
+            type="password"
+            placeholder={
+              configured && !typeChanged
+                ? "已配置（不回显），输入新值以更新"
+                : authType === "basic"
+                  ? "base64(user:pass)"
+                  : "凭证值（如 Adjust API 识别码）"
+            }
+            className={monoInputCls}
+            style={inputStyle}
+          />
+        )}
+      </div>
+
+      {typeChanged && authType !== "none" && (
+        <p className="mt-2 text-xs" style={{ color: "var(--warning)" }}>
+          认证方式已切换：保存后原凭证将沿用到新方式，建议同时填写新凭证
+        </p>
+      )}
+      {error && (
+        <p className="mt-2 text-xs" style={{ color: "var(--danger)" }}>{error}</p>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="flex items-center gap-1.5 rounded-[8px] px-4 py-1.5 text-xs font-medium transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+          style={{ background: "var(--purple)", color: "#fff" }}
+        >
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Shield size={13} />}
+          {saving ? "保存中..." : "保存认证配置"}
+        </button>
+        {savedAt > 0 && (
+          <span className="flex items-center gap-1 text-xs" style={{ color: "var(--success)" }}>
+            <CheckCircle2 size={12} /> 已保存
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
+        凭证仅存服务端（不回显）；如 Adjust API 识别码重置，在此更新即可，无需删除重建数据源
+      </p>
+    </section>
+  );
+}
+
 // ─── API 数据源调试台 ─────────────────────────────────────────────────────────
 
 interface GraphQLFieldItem {
@@ -974,7 +1143,7 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              placeholder="相对路径（如 /v1/users），留空请求 endpoint 本身"
+              placeholder="相对路径（如 csv_report），留空请求 endpoint 本身"
               className={cn(monoInputCls, "flex-1")}
               style={inputStyle}
             />
@@ -984,7 +1153,7 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
             onChange={(e) => setParamsText(e.target.value)}
             rows={2}
             spellCheck={false}
-            placeholder='query 参数 JSON（可选），如 {"page": "1"}'
+            placeholder='query 参数 JSON（可选），如 {"date_period": "2026-09-01:2026-09-02"}'
             className={cn(monoInputCls, "w-full resize-y")}
             style={inputStyle}
           />

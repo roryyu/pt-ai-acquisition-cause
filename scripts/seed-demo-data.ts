@@ -1,11 +1,11 @@
 /**
  * 演示数据集种子脚本
  *
- * 在本地 PostgreSQL 创建 demo schema，生成 2 年模拟电商经营数据：
- * - demo.regions       七大区域（层级维度）
- * - demo.products      商品维表（类目/价格/成本）
- * - demo.orders        订单明细（抽样）
- * - demo.daily_metrics 区域×渠道×日 粒度指标汇总（GMV/订单/用户/转化率）
+ * 在本地 PostgreSQL 创建 data schema，生成 2 年模拟电商经营数据：
+ * - data.regions       七大区域（层级维度）
+ * - data.products      商品维表（类目/价格/成本）
+ * - data.orders        订单明细（抽样）
+ * - data.daily_metrics 区域×渠道×日 粒度指标汇总（GMV/订单/用户/转化率）
  *
  * 数据特征（预埋可发现的洞察）：
  * 1. 整体上升趋势 + 年度季节性（618 / 双11 大促尖峰）
@@ -52,21 +52,21 @@ const rand = mulberry32(20260825);
 async function main() {
   const client = await pool.connect();
   try {
-    console.log("→ 清理旧 demo schema ...");
-    await client.query("DROP SCHEMA IF EXISTS demo CASCADE");
+    console.log("→ 清理旧 data schema ...");
+    await client.query("DROP SCHEMA IF EXISTS data CASCADE");
 
-    console.log("→ 创建 demo schema 与表 ...");
+    console.log("→ 创建 data schema 与表 ...");
     await client.query(`
-      CREATE SCHEMA demo;
+      CREATE SCHEMA data;
 
-      CREATE TABLE demo.regions (
+      CREATE TABLE data.regions (
         id   SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         tier INT  NOT NULL DEFAULT 1,
         note TEXT NOT NULL DEFAULT ''
       );
 
-      CREATE TABLE demo.products (
+      CREATE TABLE data.products (
         id       SERIAL PRIMARY KEY,
         name     TEXT NOT NULL,
         category TEXT NOT NULL,
@@ -74,23 +74,23 @@ async function main() {
         cost     NUMERIC(10,2) NOT NULL
       );
 
-      CREATE TABLE demo.orders (
+      CREATE TABLE data.orders (
         id           SERIAL PRIMARY KEY,
         order_no     TEXT NOT NULL UNIQUE,
         user_id      INT  NOT NULL,
         region       TEXT NOT NULL,
         channel      TEXT NOT NULL,
         category     TEXT NOT NULL,
-        product_id   INT  NOT NULL REFERENCES demo.products(id),
+        product_id   INT  NOT NULL REFERENCES data.products(id),
         amount       NUMERIC(12,2) NOT NULL,
         quantity     INT  NOT NULL,
         status       TEXT NOT NULL DEFAULT 'paid',
         created_at   TIMESTAMPTZ NOT NULL
       );
-      CREATE INDEX idx_orders_created_at ON demo.orders(created_at);
-      CREATE INDEX idx_orders_region ON demo.orders(region);
+      CREATE INDEX idx_orders_created_at ON data.orders(created_at);
+      CREATE INDEX idx_orders_region ON data.orders(region);
 
-      CREATE TABLE demo.daily_metrics (
+      CREATE TABLE data.daily_metrics (
         stat_date        DATE NOT NULL,
         region           TEXT NOT NULL,
         channel          TEXT NOT NULL,
@@ -102,13 +102,13 @@ async function main() {
         avg_order_value  NUMERIC(10,2) NOT NULL,
         PRIMARY KEY (stat_date, region, channel)
       );
-      CREATE INDEX idx_dm_date ON demo.daily_metrics(stat_date);
+      CREATE INDEX idx_dm_date ON data.daily_metrics(stat_date);
     `);
 
     console.log("→ 写入区域维表 ...");
     for (const [i, name] of REGIONS.entries()) {
       await client.query(
-        "INSERT INTO demo.regions(name, tier, note) VALUES ($1,$2,$3)",
+        "INSERT INTO data.regions(name, tier, note) VALUES ($1,$2,$3)",
         [name, 1, i === 0 ? "核心市场" : "成长市场"],
       );
     }
@@ -124,7 +124,7 @@ async function main() {
     }
     for (const row of productRows) {
       await client.query(
-        "INSERT INTO demo.products(name, category, price, cost) VALUES ($1,$2,$3,$4)",
+        "INSERT INTO data.products(name, category, price, cost) VALUES ($1,$2,$3,$4)",
         row,
       );
     }
@@ -191,7 +191,7 @@ async function main() {
           const newUsers = Math.round(activeUsers * (0.08 + rand() * 0.06));
 
           await client.query(
-            `INSERT INTO demo.daily_metrics
+            `INSERT INTO data.daily_metrics
              (stat_date, region, channel, gmv, orders, active_users, new_users, conversion_rate, avg_order_value)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
             [
@@ -263,10 +263,10 @@ async function main() {
       gmv: string; orders: string; regions: string; anomaly: string;
     }>(`
       SELECT
-        (SELECT ROUND(SUM(gmv)) FROM demo.daily_metrics WHERE stat_date >= '2026-01-01') AS gmv,
-        (SELECT COUNT(*) FROM demo.orders) AS orders,
-        (SELECT COUNT(DISTINCT region) FROM demo.daily_metrics) AS regions,
-        (SELECT ROUND(AVG(conversion_rate),4) FROM demo.daily_metrics
+        (SELECT ROUND(SUM(gmv)) FROM data.daily_metrics WHERE stat_date >= '2026-01-01') AS gmv,
+        (SELECT COUNT(*) FROM data.orders) AS orders,
+        (SELECT COUNT(DISTINCT region) FROM data.daily_metrics) AS regions,
+        (SELECT ROUND(AVG(conversion_rate),4) FROM data.daily_metrics
           WHERE region='华东' AND channel='app' AND stat_date >= '2026-06-01') AS anomaly
     `);
     const r = check.rows[0]!;
@@ -314,7 +314,7 @@ async function insertOrders(
     })
     .join(",");
   await client.query(
-    `INSERT INTO demo.orders
+    `INSERT INTO data.orders
      (order_no, user_id, region, channel, category, product_id, amount, quantity, status, created_at)
      VALUES ${placeholders}`,
     values,
