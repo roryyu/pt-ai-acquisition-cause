@@ -12,7 +12,7 @@ import {
  * 落 PostgreSQL（design.md §6.3：Redis 未实施，PG 为当前替代实现）：
  * - cause.api_query_cache：cache_key = sha256(method + 完整 URL + params 按 key 排序)
  * - 命中未过期 → 直接返回（fromCache）；未命中 → 请求后写入
- * - 上游 429/5xx 且存在过期旧值 → 降级返回旧值（stale-while-error）
+ * - 上游 429/5xx 先指数退避重试（优先遵循 Retry-After），仍失败且存在过期旧值 → 降级返回旧值（stale-while-error）
  * - 简单限流：同一数据源内存最小调用间隔（≥200ms），缓冲 Adjust 50 req/s 速率限制
  *
  * TTL 策略适配 Adjust 数据 T+1 特性（resolveTtlSeconds，纯函数可单测）：
@@ -44,6 +44,24 @@ const STABLE_TTL_SECONDS = 7 * 86400;
 const RECENT_TTL_SECONDS = 1800;
 /** 同一数据源最小调用间隔（ms）——单实例内存限流，够用且无外部依赖 */
 const MIN_CALL_INTERVAL_MS = 200;
+/** 429/5xx 指数退避重试次数（官方建议：指数退避 + 抖动，勿紧密循环重试） */
+const MAX_RETRIES = 2;
+/** 退避基准与上限（ms） */
+const BACKOFF_BASE_MS = 500;
+const BACKOFF_MAX_MS = 10_000;
+const BACKOFF_JITTER_MS = 250;
+
+/**
+ * 计算退避等待时长（含随机抖动，避免多客户端同步重试）：
+ * 优先遵循上游 Retry-After（retryAfterMs），否则指数退避 base × 2^attempt，上限 10s（纯函数）
+ */
+export function computeBackoffMs(attempt: number, retryAfterMs?: number): number {
+  const jitter = Math.floor(Math.random() * BACKOFF_JITTER_MS);
+  if (retryAfterMs !== undefined && retryAfterMs > 0) {
+    return Math.min(retryAfterMs + jitter, BACKOFF_MAX_MS);
+  }
+  return Math.min(BACKOFF_BASE_MS * 2 ** attempt + jitter, BACKOFF_MAX_MS);
+}
 
 const lastCallAt = new Map<string, number>();
 
@@ -138,11 +156,15 @@ export async function cachedRestRequest(
     console.warn("[api-cache] 缓存读取失败，降级直连:", error instanceof Error ? error.message : error);
   }
 
-  // 2. 未命中 → 限流 + 实时请求
+  // 2. 未命中 → 限流 + 实时请求（429/5xx 指数退避重试，优先遵循 Retry-After）
   if (!options.skipThrottle) await throttle(options.sourceId);
   let result: ApiCallResult;
   try {
     result = await executeRestRequest(config, input);
+    for (let attempt = 0; attempt < MAX_RETRIES && (result.status === 429 || result.status >= 500); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, computeBackoffMs(attempt, result.retryAfterMs)));
+      result = await executeRestRequest(config, input);
+    }
   } catch (error) {
     // 网络异常且有旧缓存 → stale 降级
     if (cached) {

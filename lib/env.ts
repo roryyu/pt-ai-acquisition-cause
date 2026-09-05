@@ -47,6 +47,13 @@ const serverEnvSchema = z.object({
   OBJECT_STORAGE_ACCESS_KEY: z.string().optional(),
   OBJECT_STORAGE_SECRET_KEY: z.string().optional(),
   OBJECT_STORAGE_BUCKET: z.string().default("insight"),
+
+  // ---------- Adjust 报告服务 API（见 doc/Adjust官网API与MCP对接指南-20260902.md） ----------
+  /** API 识别码：Adjust 控制面板 → 账户设置 → 个人档案，Bearer Token 认证 */
+  ADJUST_API_TOKEN: z.string().optional(),
+  ADJUST_RS_API_BASE_URL: z.string().url().default("https://automate.adjust.com/reports-service"),
+  /** 报告时区（如 +08:00）：同步落库与算子 API 直查统一口径，避免跨日错位 */
+  ADJUST_RS_UTC_OFFSET: z.string().regex(/^[+-]\d{2}:\d{2}$/, "格式如 +08:00").optional(),
 });
 
 /** 服务端环境变量类型（从 Schema 推断） */

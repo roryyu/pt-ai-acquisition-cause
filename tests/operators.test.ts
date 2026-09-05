@@ -380,8 +380,8 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
 
   it("aggregate：API 源指标经 cachedRestRequest 直查，自动用上游 slug，列名映射回本地 id，不触达本地 SQL", async () => {
     cachedRestRequestMock.mockResolvedValue({
-      status: 200, contentType: "text/csv",
-      body: "network,register_events\nweb,42\ngadmobe-apk,7\n",
+      status: 200, contentType: "application/json",
+      body: { rows: [{ network: "web", register_events: 42 }, { network: "gadmobe-apk", register_events: 7 }], totals: { register_events: 49 } },
       elapsedMs: 500, truncated: false, fromCache: false, cacheState: "miss",
     } as never);
     const result = await runOperator("aggregate", {
@@ -390,7 +390,7 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
     expect(result.ok).toBe(true);
     const [config, request, options] = cachedRestRequestMock.mock.calls[0]!;
     expect(config.endpoint).toBe("https://rs.adjust.com/reports-service");
-    expect(request.path).toBe("csv_report");
+    expect(request.path).toBe("report");                              // JSON 终端（额外获得 totals 校验）
     expect(request.params?.["metrics"]).toBe("register_events");   // 本地 register_cnt → 上游 slug
     expect(request.params?.["dimensions"]).toBe("network");
     expect(request.params?.["date_period"]).toBe("2026-09-03:2026-09-03");
@@ -398,9 +398,11 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
     expect(queryMock).not.toHaveBeenCalled();                       // 未走本地 SQL
     expect(result.columns).toEqual(["network", "register_cnt"]);    // 列名映射回本地 id
     expect(result.rows[0]).toEqual({ network: "web", register_cnt: 42 });
+    // JSON 终端 totals 写入 notes（口径校验用）
+    expect(result.notes.join(" ")).toContain("API totals 区间总量");
   });
 
-  it("filter：API 源模型经 cachedRestRequest 取全维度明细，slug 自动映射回本地 id", async () => {
+  it("filter：API 源模型经 cachedRestRequest 取全维度明细，slug 自动映射回本地 id（CSV 响应兼容）", async () => {
     cachedRestRequestMock.mockResolvedValue({
       status: 200, contentType: "text/csv",
       body: "network,country_code,installs,register_events,firstdeposit_events\nweb,us,100,42,7\n",
@@ -411,6 +413,7 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
     });
     expect(result.ok).toBe(true);
     const [, request] = cachedRestRequestMock.mock.calls[0]!;
+    expect(request.path).toBe("report");
     expect(request.params?.["dimensions"]).toBe("network,country_code");
     expect(request.params?.["metrics"]).toBe("installs,register_events,firstdeposit_events");
     expect(queryMock).not.toHaveBeenCalled();

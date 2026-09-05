@@ -12,9 +12,9 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/lib/db", () => ({ prisma: {} }));
 
-import { resolveRequestUrl } from "@/lib/server/connectors/api";
+import { resolveRequestUrl, parseRetryAfterMs } from "@/lib/server/connectors/api";
 import { parseCsvTable, csvTableToObjects } from "@/lib/server/connectors/csv";
-import { computeApiCacheKey, resolveTtlSeconds } from "@/lib/server/connectors/api-cache";
+import { computeApiCacheKey, resolveTtlSeconds, computeBackoffMs } from "@/lib/server/connectors/api-cache";
 
 // ─── resolveRequestUrl：base path 保留（20260902 缺陷修复回归） ──────────────
 
@@ -115,5 +115,41 @@ describe("computeApiCacheKey / resolveTtlSeconds（缓存策略）", () => {
     expect(resolveTtlSeconds({ date_period: "2026-08-01:2026-09-01" }, "2026-09-02")).toBe(1800);
     expect(resolveTtlSeconds({}, "2026-09-02")).toBe(3600);
     expect(resolveTtlSeconds(undefined, "2026-09-02")).toBe(3600);
+  });
+});
+
+// ─── 429 指数退避重试：Retry-After 解析与退避时长（官方建议：指数退避 + 抖动） ──
+
+describe("parseRetryAfterMs / computeBackoffMs（429 退避策略）", () => {
+  it("Retry-After 秒数格式 → 毫秒", () => {
+    expect(parseRetryAfterMs("120")).toBe(120_000);
+    expect(parseRetryAfterMs("0")).toBe(0);
+  });
+
+  it("Retry-After HTTP-date 格式 → 距当前毫秒；已过期/非法/缺失 → undefined", () => {
+    const future = new Date(Date.now() + 5_000).toUTCString();
+    const delay = parseRetryAfterMs(future);
+    expect(delay).toBeGreaterThan(0);
+    expect(delay).toBeLessThanOrEqual(5_001);
+    expect(parseRetryAfterMs(new Date(Date.now() - 1_000).toUTCString())).toBeUndefined();
+    expect(parseRetryAfterMs("not-a-date")).toBeUndefined();
+    expect(parseRetryAfterMs(null)).toBeUndefined();
+  });
+
+  it("无 Retry-After → 指数退避 500×2^attempt（+0~250ms 抖动）", () => {
+    const b0 = computeBackoffMs(0);
+    expect(b0).toBeGreaterThanOrEqual(500);
+    expect(b0).toBeLessThan(750);
+    const b1 = computeBackoffMs(1);
+    expect(b1).toBeGreaterThanOrEqual(1000);
+    expect(b1).toBeLessThan(1250);
+  });
+
+  it("Retry-After 优先于指数退避；退避上限 10s", () => {
+    const withRetryAfter = computeBackoffMs(0, 3_000);
+    expect(withRetryAfter).toBeGreaterThanOrEqual(3_000);
+    expect(withRetryAfter).toBeLessThan(3_250);
+    expect(computeBackoffMs(10)).toBeLessThanOrEqual(10_000);
+    expect(computeBackoffMs(0, 60_000)).toBeLessThanOrEqual(10_000);
   });
 });

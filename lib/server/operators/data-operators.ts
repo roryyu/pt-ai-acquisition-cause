@@ -316,9 +316,11 @@ function toNum(v: unknown): number {
 }
 
 /**
- * API 源统一取数：维度/指标自动用上游 slug 构造 csv_report 请求 →
+ * API 源统一取数：维度/指标自动用上游 slug 构造 JSON 终端（/report）请求 →
  * cachedRestRequest（命中本地查询缓存则不请求上游，否则 API 直查并回写缓存）→ 解析为表格行。
  * 返回行列名仍为上游 slug，由调用方映射回本地语义 id。
+ * 选用 JSON 终端而非 CSV：额外获得 totals（汇总校验）与 data_warnings（上游数据预警），
+ * 均写入 notes 供 LLM/使用者感知；带 utc_offset 保证与本地同步落库同一时区口径。
  */
 async function fetchApiReportRows(
   source: ResolvedDataSource,
@@ -336,9 +338,10 @@ async function fetchApiReportRows(
     date_period: datePeriod,
   };
   if (sortSlug) params["sort"] = `-${sortSlug}`;
+  if (env.ADJUST_RS_UTC_OFFSET) params["utc_offset"] = env.ADJUST_RS_UTC_OFFSET;
   let result;
   try {
-    result = await cachedRestRequest(source.apiConfig!, { method: "GET", path: "csv_report", params }, { sourceId: source.id });
+    result = await cachedRestRequest(source.apiConfig!, { method: "GET", path: "report", params }, { sourceId: source.id });
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -354,6 +357,20 @@ async function fetchApiReportRows(
   const notes: string[] = [];
   if (result.cacheState === "fresh") notes.push("命中查询缓存（fresh），未请求上游");
   if (result.cacheState === "stale") notes.push("上游异常，降级返回过期缓存（stale）");
+  // JSON 终端附加信息：totals（区间总量，可与分组行求和交叉校验）与 data_warnings（上游数据预警）
+  if (result.body && typeof result.body === "object" && !Array.isArray(result.body)) {
+    const { totals, data_warnings: dataWarnings } = result.body as {
+      totals?: Record<string, unknown>;
+      data_warnings?: unknown;
+    };
+    if (totals && Object.keys(totals).length > 0) {
+      const summary = Object.entries(totals).map(([k, v]) => `${k}=${v}`).join(", ");
+      notes.push(`API totals 区间总量（口径校验用）: ${summary}`);
+    }
+    if (Array.isArray(dataWarnings) && dataWarnings.length > 0) {
+      notes.push(`上游数据预警: ${dataWarnings.join("；")}`);
+    }
+  }
   return { ok: true, columns: table.columns, rows: table.rows, elapsedMs: result.elapsedMs, notes };
 }
 

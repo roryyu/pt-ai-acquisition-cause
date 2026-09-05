@@ -56,10 +56,27 @@ export function buildAuthHeaders(config: ApiSourceConfig): Record<string, string
   return headers;
 }
 
+/**
+ * 解析 Retry-After 响应头为毫秒数（纯函数）
+ * 支持秒数（如 "120"）与 HTTP-date（如 "Wed, 21 Oct 2026 07:28:00 GMT"）两种格式；
+ * 无法解析或已过期返回 undefined（官方建议：429 限流时优先遵循该头部）
+ */
+export function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const dateMs = Date.parse(trimmed);
+  if (Number.isFinite(dateMs)) {
+    const delay = dateMs - Date.now();
+    return delay > 0 ? delay : undefined;
+  }
+  return undefined;
+}
+
 async function fetchWithLimits(
   url: string,
   init: RequestInit,
-): Promise<{ status: number; contentType: string; body: string; truncated: boolean }> {
+): Promise<{ status: number; contentType: string; body: string; truncated: boolean; retryAfterMs?: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -71,6 +88,10 @@ async function fetchWithLimits(
       contentType: response.headers.get("content-type") ?? "",
       body: truncated ? raw.slice(0, MAX_BODY_BYTES) : raw,
       truncated,
+      // 仅限流/服务不可用时读取，供上层指数退避（Adjust 速率限制 50 req/s，超限返回 429）
+      ...(response.status === 429 || response.status === 503
+        ? { retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")) }
+        : {}),
     };
   } finally {
     clearTimeout(timer);
@@ -172,6 +193,8 @@ export interface ApiCallResult {
   body: unknown;
   elapsedMs: number;
   truncated: boolean;
+  /** 429/503 时上游 Retry-After 头部解析结果（毫秒），供退避重试 */
+  retryAfterMs?: number;
 }
 
 /**
@@ -238,6 +261,7 @@ export async function executeRestRequest(
     body: parseBody(result.body, result.contentType),
     elapsedMs: Date.now() - start,
     truncated: result.truncated,
+    retryAfterMs: result.retryAfterMs,
   };
 }
 
