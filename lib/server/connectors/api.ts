@@ -82,6 +82,10 @@ async function fetchWithLimits(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
+    // 本函数刻意返回所有响应（含 4xx/5xx），由调用方按 status 决策：
+    // testApiSource 用 status<400/<500 判定可达并生成诊断，fetchWithRetry 用 429/503 触发指数退避。
+    // 故此处不抛错，仅先取状态供限流退避判定，再读取响应体。
+    const isRetryStatus = response.status === 429 || response.status === 503;
     const raw = await response.text();
     const truncated = raw.length > maxBodyBytes;
     return {
@@ -90,9 +94,7 @@ async function fetchWithLimits(
       body: truncated ? raw.slice(0, maxBodyBytes) : raw,
       truncated,
       // 仅限流/服务不可用时读取，供上层指数退避（Adjust 速率限制 50 req/s，超限返回 429）
-      ...(response.status === 429 || response.status === 503
-        ? { retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")) }
-        : {}),
+      ...(isRetryStatus ? { retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")) } : {}),
     };
   } finally {
     clearTimeout(timer);

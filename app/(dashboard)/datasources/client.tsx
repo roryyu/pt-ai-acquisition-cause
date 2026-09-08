@@ -7,6 +7,7 @@ import {
   Webhook, Bot, Trash2, Play, Wrench, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 import { DataTable } from "@/components/data/DataTable";
 
 /**
@@ -70,8 +71,7 @@ export function DataSourcesClient() {
 
   const loadSources = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/datasources");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/datasources");
       if (json.ok) {
         setSources(json.data.dataSources ?? []);
         setSelectedId((prev) => prev ?? json.data.dataSources?.[0]?.id ?? null);
@@ -87,12 +87,11 @@ export function DataSourcesClient() {
 
   /** 连接测试 */
   const runTest = useCallback(async () => {
-    if (!selectedId) return;
+    if (!selectedId || testing) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/v1/datasources/${selectedId}/test`, { method: "POST" });
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/datasources/${selectedId}/test`, { method: "POST" });
       if (json.ok) {
         const d = json.data;
         let text: string;
@@ -121,7 +120,7 @@ export function DataSourcesClient() {
     } finally {
       setTesting(false);
     }
-  }, [selectedId]);
+  }, [selectedId, testing]);
 
   /** 切换到 PostgreSQL 数据源时自动加载 Schema（setState 均在异步回调中，避免 effect 内同步更新） */
   useEffect(() => {
@@ -134,8 +133,7 @@ export function DataSourcesClient() {
       setPreview(null);
       setQueryResult(null);
     });
-    fetch(`/api/v1/datasources/${selectedId}/schema`)
-      .then((res) => res.json())
+    apiFetch(`/api/v1/datasources/${selectedId}/schema`)
       .then((json) => {
         if (!cancelled && json.ok) setTables(json.data.tables ?? []);
       })
@@ -155,8 +153,7 @@ export function DataSourcesClient() {
       setLoadingPreview(true);
       setExpandedTable(`${schema}.${table}`);
       try {
-        const res = await fetch(`/api/v1/datasources/${selectedId}/preview?schema=${schema}&table=${table}&limit=50`);
-        const json = await res.json();
+        const json = await apiFetch(`/api/v1/datasources/${selectedId}/preview?schema=${schema}&table=${table}&limit=50`);
         if (json.ok) {
           setPreview({ table: `${schema}.${table}`, result: json.data });
         }
@@ -174,12 +171,11 @@ export function DataSourcesClient() {
     setQueryError("");
     setQueryResult(null);
     try {
-      const res = await fetch(`/api/v1/datasources/${selectedId}/query`, {
+      const json = await apiFetch(`/api/v1/datasources/${selectedId}/query`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sql, schema: "data", maxRows: 200 }),
       });
-      const json = await res.json();
       if (json.ok) {
         setQueryResult(json.data);
       } else {
@@ -196,8 +192,7 @@ export function DataSourcesClient() {
   const deleteSource = useCallback(
     async (id: string, name: string) => {
       if (!window.confirm(`确定删除数据源「${name}」？`)) return;
-      const res = await fetch(`/api/v1/datasources/${id}`, { method: "DELETE" });
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/datasources/${id}`, { method: "DELETE" });
       if (json.ok) {
         setSelectedId((prev) => (prev === id ? null : prev));
         loadSources();
@@ -606,12 +601,11 @@ function CreateSourceForm({ onCreated }: { onCreated: () => void }) {
     setSubmitting(true);
     setError("");
     try {
-      const res = await fetch("/api/v1/datasources", {
+      const json = await apiFetch("/api/v1/datasources", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
       if (json.ok) onCreated();
       else setError(json.error?.message ?? "创建失败");
     } catch (err) {
@@ -819,12 +813,11 @@ function ApiAuthPanel({ source, onSaved }: { source: DataSourceItem; onSaved: ()
       const payload: Record<string, unknown> = { authType };
       if (authType !== "none" && authToken.trim()) payload.authToken = authToken.trim();
       if (authType === "api_key" && apiKeyHeader.trim()) payload.apiKeyHeader = apiKeyHeader.trim();
-      const res = await fetch(`/api/v1/datasources/${source.id}`, {
+      const json = await apiFetch(`/api/v1/datasources/${source.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
       if (json.ok) {
         setSavedAt(Date.now());
         setAuthToken("");
@@ -969,6 +962,7 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
   const [resultMeta, setResultMeta] = useState("");
 
   const run = useCallback(async () => {
+    if (running) return;
     setRunning(true);
     setError("");
     setResult(null);
@@ -1004,12 +998,11 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
           }
         }
       }
-      const res = await fetch(`/api/v1/datasources/${source.id}/${action}`, {
+      const json = await apiFetch(`/api/v1/datasources/${source.id}/${action}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
       if (!json.ok) {
         setError(json.error?.message ?? "请求失败");
         return;
@@ -1027,7 +1020,7 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
     } finally {
       setRunning(false);
     }
-  }, [source.id, isGraphQL, query, variablesText, method, path, paramsText, bodyText]);
+  }, [source.id, isGraphQL, query, variablesText, method, path, paramsText, bodyText, running]);
 
   const loadSchema = useCallback(async () => {
     if (schemaFields) {
@@ -1037,8 +1030,7 @@ function ApiSourcePanel({ source }: { source: DataSourceItem }) {
     setLoadingFields(true);
     setError("");
     try {
-      const res = await fetch(`/api/v1/datasources/${source.id}/schema`);
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/datasources/${source.id}/schema`);
       if (json.ok) setSchemaFields(json.data.fields ?? []);
       else setError(json.error?.message ?? "Schema 内省失败");
     } catch (err) {
@@ -1227,14 +1219,13 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
   const [task, setTask] = useState("");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentError, setAgentError] = useState("");
-  const [agentResult, setAgentResult] = useState<{ answer: string; steps: McpStepItem[] } | null>(null);
+  const [agentResult, setAgentResult] = useState<{ answer: string; steps: (McpStepItem & { uid: string })[] } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/datasources/${source.id}/tools`);
-        const json = await res.json();
+        const json = await apiFetch(`/api/v1/datasources/${source.id}/tools`);
         if (cancelled) return;
         if (json.ok) setTools(json.data.tools ?? []);
         else setToolsError(json.error?.message ?? "工具列表获取失败");
@@ -1250,6 +1241,7 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
   }, [source.id]);
 
   const invoke = useCallback(async () => {
+    if (invoking) return;
     if (!toolName.trim()) {
       setInvokeError("请先选择或输入工具名");
       return;
@@ -1267,12 +1259,11 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
     setInvokeError("");
     setInvokeResult(null);
     try {
-      const res = await fetch(`/api/v1/datasources/${source.id}/invoke`, {
+      const json = await apiFetch(`/api/v1/datasources/${source.id}/invoke`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tool: toolName.trim(), args }),
       });
-      const json = await res.json();
       if (json.ok) setInvokeResult(json.data);
       else setInvokeError(json.error?.message ?? "调用失败");
     } catch (err) {
@@ -1280,9 +1271,10 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
     } finally {
       setInvoking(false);
     }
-  }, [source.id, toolName, argsText]);
+  }, [source.id, toolName, argsText, invoking]);
 
   const runAgent = useCallback(async () => {
+    if (agentRunning) return;
     if (!task.trim()) {
       setAgentError("请输入任务描述");
       return;
@@ -1291,20 +1283,24 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
     setAgentError("");
     setAgentResult(null);
     try {
-      const res = await fetch(`/api/v1/datasources/${source.id}/agent`, {
+      const json = await apiFetch(`/api/v1/datasources/${source.id}/agent`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ task: task.trim() }),
       });
-      const json = await res.json();
-      if (json.ok) setAgentResult(json.data);
-      else setAgentError(json.error?.message ?? "执行失败");
+      if (json.ok) {
+        const d = json.data as { answer: string; steps: McpStepItem[] };
+        setAgentResult({
+          answer: d.answer,
+          steps: (d.steps ?? []).map((s, idx) => ({ ...s, uid: `step-${idx}` })),
+        });
+      } else setAgentError(json.error?.message ?? "执行失败");
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : "网络异常");
     } finally {
       setAgentRunning(false);
     }
-  }, [source.id, task]);
+  }, [source.id, task, agentRunning]);
 
   return (
     <>
@@ -1456,7 +1452,7 @@ function McpSourcePanel({ source }: { source: DataSourceItem }) {
               <div className="rounded-[8px] border" style={{ borderColor: "var(--line)" }}>
                 {agentResult.steps.map((step, i) => (
                   <div
-                    key={i}
+                    key={step.uid}
                     className="border-b px-3 py-2 last:border-b-0"
                     style={{ borderColor: "var(--line)" }}
                   >

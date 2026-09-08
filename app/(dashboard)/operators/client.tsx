@@ -6,6 +6,7 @@ import {
   BarChart3, Telescope, CheckCircle2, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 import { DataTable } from "@/components/data/DataTable";
 
 /**
@@ -85,8 +86,7 @@ export function OperatorsClient() {
 
   const loadOperators = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/operators");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/operators");
       if (json.ok) {
         const list: OperatorItem[] = json.data.operators ?? [];
         setOperators(list);
@@ -149,17 +149,17 @@ export function OperatorsClient() {
 
   /** 试运行 */
   const runTrial = useCallback(async () => {
+    if (running) return;
     if (!selected) return;
     setRunning(true);
     setError("");
     setResult(null);
     try {
-      const res = await fetch("/api/v1/operators", {
+      const json = await apiFetch("/api/v1/operators", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ operatorId: selected.id, input: buildInput() }),
       });
-      const json = await res.json();
       if (json.ok) setResult(json.data);
       else setError(json.error?.message ?? "执行失败");
     } catch (err) {
@@ -167,7 +167,7 @@ export function OperatorsClient() {
     } finally {
       setRunning(false);
     }
-  }, [selected, buildInput]);
+  }, [selected, buildInput, running]);
 
   if (loading) {
     return (
@@ -429,8 +429,8 @@ function OperatorResult({ result }: { result: RunResult }) {
 
       {result.notes.length > 0 && (
         <ul className="mt-3 space-y-1">
-          {result.notes.map((n, i) => (
-            <li key={i} className="flex items-start gap-1.5 text-xs" style={{ color: "var(--ink-soft)" }}>
+          {result.notes.map((n) => (
+            <li key={n} className="flex items-start gap-1.5 text-xs" style={{ color: "var(--ink-soft)" }}>
               <Info size={11} className="mt-0.5 shrink-0" style={{ color: "var(--purple)" }} />
               {n}
             </li>

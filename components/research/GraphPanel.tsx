@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Share2, Loader2, RefreshCw, BookOpen, Maximize2, X } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
 
 /**
  * 研究知识图谱面板（Understand-Anything 融合，设计文档 4.7）
@@ -162,13 +163,13 @@ function GraphSvg({
       aria-label="研究知识图谱径向图"
     >
       {/* 关系边（端点均可见时才绘制） */}
-      {data.edges.map((e, i) => {
+      {data.edges.map((e) => {
         const from = positions.get(e.source);
         const to = positions.get(e.target);
         if (!from || !to || !displayIds.has(e.source) || !displayIds.has(e.target)) return null;
         return (
           <line
-            key={i}
+            key={`${e.source}-${e.target}-${e.relation}`}
             x1={from.x} y1={from.y} x2={to.x} y2={to.y}
             stroke="var(--line)" strokeWidth={config.nodeScale} opacity={0.9}
           >
@@ -233,28 +234,24 @@ export function GraphPanel({
   const { data: data = null, isValidating, mutate } = useSWR<GraphData | null>(
     ["/api/v1/research/graph", refreshSignal],
     async ([url]: [string, number]) => {
-      try {
-        const res = await fetch(url);
-        const json = await res.json();
-        return json.ok ? (json.data as GraphData) : null;
-      } catch {
-        // 图谱接口不可用时静默隐藏面板内容
-        return null;
-      }
+      // apiFetch 内部已检查 res.ok 且永不 reject：接口不可用时归一为 { ok:false } → 返回 null 静默隐藏
+      const json = await apiFetch<GraphData>(url);
+      return json.ok ? json.data : null;
     },
   );
   const loading = isValidating && !data;
 
   /** 一键重建：从存量已完成研究重新抽取图谱 */
   const rebuild = useCallback(async () => {
+    if (rebuilding) return;
     setRebuilding(true);
     try {
-      await fetch("/api/v1/research/graph/rebuild", { method: "POST" });
+      await apiFetch("/api/v1/research/graph/rebuild", { method: "POST" });
       await mutate();
     } finally {
       setRebuilding(false);
     }
-  }, [mutate]);
+  }, [mutate, rebuilding]);
 
   /** 放大视图中点击 report 节点：关闭弹窗并回看对应研究 */
   const openReportFromLargeView = useCallback(

@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, PenTool, Trash2, X, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 
 /** 文档类型元信息（图标/文案/主题色） */
 const KIND_META = {
@@ -53,8 +54,7 @@ export function InsightsClient() {
     setLoading(true);
     try {
       const qs = kind ? `?kind=${kind}` : "";
-      const res = await fetch(`/api/v1/insights${qs}`);
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/insights${qs}`);
       if (json.ok) setDocs(json.data.docs ?? []);
     } catch {
       setError("加载洞察文档列表失败");
@@ -69,15 +69,15 @@ export function InsightsClient() {
   }, [loadDocs, tab]);
 
   const handleCreate = useCallback(async () => {
-    if (!newTitle.trim() || creating) return;
+    if (creating) return;
+    if (!newTitle.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/v1/insights", {
+      const json = await apiFetch("/api/v1/insights", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: newTitle.trim(), kind: newKind }),
       });
-      const json = await res.json();
       if (json.ok) {
         setShowCreate(false);
         setNewTitle("");

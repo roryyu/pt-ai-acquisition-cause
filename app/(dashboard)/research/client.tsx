@@ -7,6 +7,7 @@ import {
   CheckCircle2, XCircle, Clock, FileText, ExternalLink, X, MessageSquareText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { AgentTimeline, CitationList } from "@/components/agent/AgentTimeline";
 import { GraphPanel } from "@/components/research/GraphPanel";
@@ -128,8 +129,7 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
 
   const loadTasks = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/research?page=1&pageSize=50");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/research?page=1&pageSize=50");
       if (json.ok) setTasks(json.data.tasks ?? []);
     } finally {
       setLoadingList(false);
@@ -146,8 +146,7 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
     let cancelled = false;
     Promise.resolve().then(async () => {
       try {
-        const res = await fetch(`/api/v1/ask/${initialSourceQuestionId}`);
-        const json = await res.json();
+        const json = await apiFetch(`/api/v1/ask/${initialSourceQuestionId}`);
         if (cancelled) return;
         if (json.ok && json.data?.status === "completed") {
           const answer = (json.data.answer ?? {}) as { content?: string };
@@ -203,8 +202,7 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
     setDetail(null);
     setLoadingDetail(true);
     try {
-      const res = await fetch(`/api/v1/research/${taskId}`);
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/research/${taskId}`);
       if (json.ok) setDetail(json.data);
     } finally {
       setLoadingDetail(false);
@@ -333,9 +331,9 @@ export function ResearchClient({ initialSourceQuestionId }: { initialSourceQuest
             {/* 阶段进度条 */}
             {state.phases.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
-                {state.phases.map((p, i) => (
+                {state.phases.map((p) => (
                   <span
-                    key={i}
+                    key={`${p.phase}-${p.label}`}
                     className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
                     style={{ background: "var(--purple-pale)", color: "var(--purple)" }}
                   >

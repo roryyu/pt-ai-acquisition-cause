@@ -15,6 +15,7 @@ import "tldraw/tldraw.css";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -45,6 +46,7 @@ import {
 import { LiveContentShapeUtil } from "@/components/canvas/live-shape";
 import { ImportPanel, type ImportSource } from "@/components/canvas/ImportPanel";
 import type { BindingView } from "@/lib/canvas/types";
+import { apiFetch } from "@/lib/api-fetch";
 
 /** 保存防抖时长（毫秒） */
 const SAVE_DEBOUNCE_MS = 1500;
@@ -161,17 +163,16 @@ export function InsightsDetailEditor({
     dirtyRef.current = false;
     setSaveState("saving");
     try {
-      const res = await fetch(`/api/v1/insights/${docId}`, {
+      const json = await apiFetch(`/api/v1/insights/${docId}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         // keepalive：页面刷新/关闭时浏览器仍会送出该请求
         keepalive: true,
         body: JSON.stringify({ snapshot: getSnapshot(ed.store) }),
       });
-      const json = await res.json().catch(() => null);
-      // HTTP 200 但业务失败（如快照超限）同样视为未保存，避免“已保存”误提示
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error?.message ?? `保存失败（HTTP ${res.status}）`);
+      // HTTP 非 2xx 或业务失败（如快照超限）同样视为未保存，避免“已保存”误提示
+      if (!json.ok) {
+        throw new Error(json.error?.message ?? "保存失败");
       }
       setSaveState("idle");
       return true;
@@ -218,9 +219,9 @@ export function InsightsDetailEditor({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/insights/${docId}`);
-        const json = await res.json();
-        if (!cancelled && json.ok) {
+        const json = await apiFetch(`/api/v1/insights/${docId}`);
+        if (cancelled) return;
+        if (json.ok) {
           const d = json.data;
           setDoc({
             id: d.id,
@@ -229,7 +230,7 @@ export function InsightsDetailEditor({
             snapshot: (d.snapshot ?? null) as TLStoreSnapshot | null,
           });
           setJobs(d.schedules ?? []);
-        } else if (!cancelled) {
+        } else {
           setLoadError(json.error?.message ?? "文档加载失败");
         }
       } catch {
@@ -271,33 +272,42 @@ export function InsightsDetailEditor({
     ed.updateShape({ id: shapeId, type: "live-content", props: next });
   }, []);
 
-  // 编辑器挂载：snapshot 由组件 prop 直接还原，此处注册用户编辑监听：
+  // 编辑器挂载：snapshot 由组件 prop 直接还原，此处仅记录 editor 实例
+  const handleMount = useCallback((ed: Editor) => {
+    editorRef.current = ed;
+    setEditor(ed);
+  }, []);
+
+  // scheduleSave 经 Effect Event 调用：始终读到最新闭包，但不作为依赖，
+  // 避免 scheduleSave 变化时反复重订阅 store.listen（React 19.2+ useEffectEvent）
+  const emitScheduleSave = useEffectEvent(() => {
+    scheduleSave();
+  });
+
+  // 注册用户编辑监听（在 effect 内订阅并返回清理函数，避免卸载后监听泄漏）：
   // 1. 任意用户编辑 → 防抖保存；2. 删除实时卡片 → 级联删除对应绑定（孤儿清理）
-  const handleMount = useCallback(
-    (ed: Editor) => {
-      editorRef.current = ed;
-      setEditor(ed);
-      ed.store.listen(
-        (event) => {
-          scheduleSave();
-          for (const removed of Object.values(event.changes.removed)) {
-            if (
-              removed.typeName === "shape" &&
-              removed.type === "live-content" &&
-              removed.props.bindingId
-            ) {
-              // fire-and-forget：绑定清理失败不影响画布编辑，下轮轮询会自然暴露孤儿
-              fetch(`/api/v1/insights/bindings/${removed.props.bindingId}`, {
-                method: "DELETE",
-              }).catch(() => {});
-            }
+  useEffect(() => {
+    if (!editor) return;
+    const dispose = editor.store.listen(
+      (event) => {
+        emitScheduleSave();
+        for (const removed of Object.values(event.changes.removed)) {
+          if (
+            removed.typeName === "shape" &&
+            removed.type === "live-content" &&
+            removed.props.bindingId
+          ) {
+            // fire-and-forget：绑定清理失败不影响画布编辑，下轮轮询会自然暴露孤儿
+            void apiFetch(`/api/v1/insights/bindings/${removed.props.bindingId}`, {
+              method: "DELETE",
+            });
           }
-        },
-        { source: "user" },
-      );
-    },
-    [scheduleSave],
-  );
+        }
+      },
+      { source: "user" },
+    );
+    return dispose;
+  }, [editor]);
 
   // 每 10s 轮询绑定，刷新运行中源的内容
   useEffect(() => {
@@ -305,8 +315,7 @@ export function InsightsDetailEditor({
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/insights/${docId}/bindings?refresh=1`);
-        const json = await res.json();
+        const json = await apiFetch(`/api/v1/insights/${docId}/bindings?refresh=1`);
         if (cancelled || !json.ok) return;
         (json.data.bindings as BindingView[]).forEach(applyBinding);
       } catch {
@@ -343,12 +352,11 @@ export function InsightsDetailEditor({
         y: page.y - 170,
         props: { sourceStatus: "running" },
       });
-      const res = await fetch(`/api/v1/insights/${docId}/bindings`, {
+      const json = await apiFetch(`/api/v1/insights/${docId}/bindings`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceType: source.sourceType, sourceId: source.sourceId, shapeId }),
       });
-      const json = await res.json();
       if (!json.ok) {
         ed.deleteShape(shapeId);
         throw new Error(json.error?.message ?? "绑定失败");
@@ -402,12 +410,11 @@ export function InsightsDetailEditor({
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
-      const res = await fetch(`/api/v1/insights/${docId}/export`, {
+      const json = await apiFetch(`/api/v1/insights/${docId}/export`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ pngBase64: dataUrl }),
       });
-      const json = await res.json();
       notify(json.ok ? "已导出并存档" : json.error?.message ?? "存档失败");
     } catch {
       notify("导出失败，请重试");
@@ -421,12 +428,11 @@ export function InsightsDetailEditor({
     if (!recipients.trim() || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/v1/insights/${docId}/deliver`, {
+      const json = await apiFetch(`/api/v1/insights/${docId}/deliver`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ channel: "email", recipients: recipients.trim() }),
       });
-      const json = await res.json();
       if (json.ok) {
         const mock = json.data.detail?.mock;
         notify(mock ? "已记录（SMTP 未接入，内容已落盘）" : "邮件已发送");
@@ -455,7 +461,7 @@ export function InsightsDetailEditor({
     }
     setBusy(true);
     try {
-      const res = await fetch("/api/v1/schedules", {
+      const json = await apiFetch("/api/v1/schedules", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -465,7 +471,6 @@ export function InsightsDetailEditor({
           recipients: jobAction === "email" ? list : [],
         }),
       });
-      const json = await res.json();
       if (json.ok) {
         setJobs((prev) => [json.data, ...prev]);
         setDialog("");
@@ -484,8 +489,7 @@ export function InsightsDetailEditor({
   const handleDeleteJob = useCallback(
     async (id: string) => {
       try {
-        const res = await fetch(`/api/v1/schedules/${id}`, { method: "DELETE" });
-        const json = await res.json();
+        const json = await apiFetch(`/api/v1/schedules/${id}`, { method: "DELETE" });
         if (json.ok) setJobs((prev) => prev.filter((j) => j.id !== id));
         else notify(json.error?.message ?? "删除失败");
       } catch {
@@ -499,12 +503,11 @@ export function InsightsDetailEditor({
   const handleRunJobs = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch("/api/v1/schedules/run", { method: "POST" });
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/schedules/run", { method: "POST" });
       if (json.ok) {
         notify(`已触发，本次执行 ${json.data.executed ?? 0} 个任务`);
         // 刷新任务列表的 lastRunAt
-        const list = await fetch(`/api/v1/schedules?docId=${docId}`).then((r) => r.json());
+        const list = await apiFetch(`/api/v1/schedules?docId=${docId}`);
         if (list.ok) setJobs(list.data.jobs ?? []);
       } else {
         notify(json.error?.message ?? "触发失败");

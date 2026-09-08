@@ -5,6 +5,7 @@ import {
   Layers, Loader2, Gauge, Tags, Play, CircleDot, Database, Plus, Pencil, Trash2, X, Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 import { DataTable } from "@/components/data/DataTable";
 
 /**
@@ -88,8 +89,7 @@ export function SemanticClient() {
 
   const loadModels = useCallback(async (keepSelection = false) => {
     try {
-      const res = await fetch("/api/v1/semantic/models");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/semantic/models");
       if (json.ok) {
         const list: SemanticModelItem[] = json.data.models ?? [];
         setModels(list);
@@ -107,8 +107,7 @@ export function SemanticClient() {
 
   const loadDataSources = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/datasources");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/datasources");
       if (json.ok) {
         // 语义模型仅支持 PostgreSQL（bi）数据源
         setDataSources(
@@ -146,6 +145,7 @@ export function SemanticClient() {
 
   /** 语义查询试运行：SemanticQueryV1 → SQL → 执行 */
   const runTranslate = useCallback(async () => {
+    if (running) return;
     setRunning(true);
     setError("");
     setResult(null);
@@ -163,12 +163,11 @@ export function SemanticClient() {
         timeRange: from || to ? { from: from || undefined, to: to || undefined } : {},
         limit: 200,
       };
-      const res = await fetch("/api/v1/semantic/translate", {
+      const json = await apiFetch("/api/v1/semantic/translate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
       if (json.ok) setResult(json.data);
       else setError(json.error?.message ?? "转译失败");
     } catch (err) {
@@ -176,14 +175,13 @@ export function SemanticClient() {
     } finally {
       setRunning(false);
     }
-  }, [metric, dimension, granularity, from, to]);
+  }, [metric, dimension, granularity, from, to, running]);
 
   /** 删除自定义模型 */
   const deleteModel = useCallback(async (m: SemanticModelItem) => {
     if (!window.confirm(`确认删除语义模型「${m.name}」？删除后不可恢复。`)) return;
     try {
-      const res = await fetch(`/api/v1/semantic/models/${m.id}`, { method: "DELETE" });
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/semantic/models/${m.id}`, { method: "DELETE" });
       if (!json.ok) {
         window.alert(json.error?.message ?? "删除失败");
         return;
@@ -474,6 +472,7 @@ export function SemanticClient() {
 // ─── 模型编辑器（新建 / 编辑） ─────────────────────────────────────────────────
 
 interface MetricDraft {
+  uid: string;
   id: string;
   name: string;
   column: string;
@@ -483,6 +482,7 @@ interface MetricDraft {
 }
 
 interface DimensionDraft {
+  uid: string;
   id: string;
   name: string;
   column: string;
@@ -491,6 +491,10 @@ interface DimensionDraft {
 }
 
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/** 草稿行 uid 序列：为可增删/可编辑的指标·维度行生成稳定 key，避免用数组索引 */
+let draftUidSeq = 0;
+const nextDraftUid = () => `draft-${++draftUidSeq}`;
 
 function ModelEditor({
   model,
@@ -510,11 +514,11 @@ function ModelEditor({
   const [description, setDescription] = useState(model?.description ?? "");
   const [dataSourceId, setDataSourceId] = useState(model?.dataSourceId ?? "data_source_demo_pg");
   const [metrics, setMetrics] = useState<MetricDraft[]>(
-    model?.metrics.map((m) => ({ ...m, unit: m.unit ?? "" })) ?? [emptyMetric()],
+    () => model?.metrics.map((m) => ({ ...m, unit: m.unit ?? "", uid: nextDraftUid() })) ?? [emptyMetric()],
   );
   const [dimensions, setDimensions] = useState<DimensionDraft[]>(
-    model?.dimensions.map((d) => ({
-      id: d.id, name: d.name, column: d.column,
+    () => model?.dimensions.map((d) => ({
+      uid: nextDraftUid(), id: d.id, name: d.name, column: d.column,
       valuesText: d.values?.join(",") ?? "", description: d.description,
     })) ?? [],
   );
@@ -571,7 +575,7 @@ function ModelEditor({
           description: d.description.trim(),
         })),
       };
-      const res = await fetch(
+      const json = await apiFetch(
         model ? `/api/v1/semantic/models/${model.id}` : "/api/v1/semantic/models",
         {
           method: model ? "PUT" : "POST",
@@ -579,7 +583,6 @@ function ModelEditor({
           body: JSON.stringify(body),
         },
       );
-      const json = await res.json();
       if (!json.ok) {
         setError(json.error?.message ?? "保存失败");
         return;
@@ -663,7 +666,7 @@ function ModelEditor({
         </div>
         <div className="space-y-2">
           {metrics.map((m, i) => (
-            <div key={i} className="flex items-center gap-2 rounded-[8px] border p-2" style={{ borderColor: "var(--line)" }}>
+            <div key={m.uid} className="flex items-center gap-2 rounded-[8px] border p-2" style={{ borderColor: "var(--line)" }}>
               <input value={m.id} onChange={(e) => updateMetric(i, { id: e.target.value })} placeholder="id（如 gmv）" className={cn(selectCls, "w-28 font-mono")} style={controlStyle} />
               <input value={m.name} onChange={(e) => updateMetric(i, { name: e.target.value })} placeholder="名称" className={cn(selectCls, "w-24")} style={controlStyle} />
               <input value={m.column} onChange={(e) => updateMetric(i, { column: e.target.value })} placeholder="物理列" className={cn(selectCls, "w-28 font-mono")} style={controlStyle} />
@@ -695,7 +698,7 @@ function ModelEditor({
             <Tags size={12} /> 维度（{dimensions.length}）
           </h3>
           <button
-            onClick={() => setDimensions((list) => [...list, { id: "", name: "", column: "", valuesText: "", description: "" }])}
+            onClick={() => setDimensions((list) => [...list, { uid: nextDraftUid(), id: "", name: "", column: "", valuesText: "", description: "" }])}
             className="flex items-center gap-1 rounded-[6px] border px-2 py-1 text-xs"
             style={{ borderColor: "var(--line)", color: "var(--success)" }}
           >
@@ -707,7 +710,7 @@ function ModelEditor({
             <p className="text-xs" style={{ color: "var(--muted)" }}>暂无维度，可不添加</p>
           )}
           {dimensions.map((d, i) => (
-            <div key={i} className="flex items-center gap-2 rounded-[8px] border p-2" style={{ borderColor: "var(--line)" }}>
+            <div key={d.uid} className="flex items-center gap-2 rounded-[8px] border p-2" style={{ borderColor: "var(--line)" }}>
               <input value={d.id} onChange={(e) => updateDimension(i, { id: e.target.value })} placeholder="id（如 region）" className={cn(selectCls, "w-28 font-mono")} style={controlStyle} />
               <input value={d.name} onChange={(e) => updateDimension(i, { name: e.target.value })} placeholder="名称" className={cn(selectCls, "w-24")} style={controlStyle} />
               <input value={d.column} onChange={(e) => updateDimension(i, { column: e.target.value })} placeholder="物理列" className={cn(selectCls, "w-28 font-mono")} style={controlStyle} />
@@ -755,7 +758,7 @@ function ModelEditor({
 }
 
 function emptyMetric(): MetricDraft {
-  return { id: "", name: "", column: "", agg: "sum", unit: "", description: "" };
+  return { uid: nextDraftUid(), id: "", name: "", column: "", agg: "sum", unit: "", description: "" };
 }
 
 const selectCls =

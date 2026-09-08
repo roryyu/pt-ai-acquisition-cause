@@ -124,8 +124,8 @@ function TimelineStepItem({ step, isLast }: { step: TimelineStep; isLast: boolea
 
         {step.tools.length > 0 && (
           <div className="mt-1.5 space-y-1">
-            {step.tools.map((tool, i) => (
-              <ToolCallItem key={i} tool={tool} onToggle={() => setOpen(!open)} expanded={open} />
+            {step.tools.map((tool) => (
+              <ToolCallItem key={tool.id} tool={tool} onToggle={() => setOpen(!open)} expanded={open} />
             ))}
           </div>
         )}

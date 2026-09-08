@@ -53,7 +53,7 @@ export interface TimelineStep {
   status: "running" | "done" | "error";
   detail?: string;
   /** 关联的工具调用 */
-  tools: Array<{ tool: string; input: unknown; summary?: string; elapsedMs?: number }>;
+  tools: Array<{ id: string; tool: string; input: unknown; summary?: string; elapsedMs?: number }>;
 }
 
 /** Agent 事件流的客户端聚合状态 */
@@ -115,7 +115,11 @@ export function applyAgentEvent(state: AgentStreamState, event: AgentEvent): Age
       if (idx >= 0) {
         steps[idx] = {
           ...steps[idx]!,
-          tools: [...steps[idx]!.tools, { tool: event.tool, input: event.input }],
+          tools: [
+            ...steps[idx]!.tools,
+            // 注入稳定 id（stepId + 追加位置 + 工具名）：供 React 列表 key 使用，避免 index-as-key
+            { id: `${event.stepId}#${steps[idx]!.tools.length}#${event.tool}`, tool: event.tool, input: event.input },
+          ],
         };
       } else {
         steps.push({
@@ -123,7 +127,7 @@ export function applyAgentEvent(state: AgentStreamState, event: AgentEvent): Age
           agent: "worker",
           label: toolDisplayName(event.tool),
           status: "running",
-          tools: [{ tool: event.tool, input: event.input }],
+          tools: [{ id: `${event.stepId}#0#${event.tool}`, tool: event.tool, input: event.input }],
         });
       }
       return { ...state, steps };

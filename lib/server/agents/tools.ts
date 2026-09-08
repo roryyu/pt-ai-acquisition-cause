@@ -74,8 +74,8 @@ export function createRunOperatorTool(ctx: AgentRunContext, description?: string
           });
         }
         if (result.sql) ctx.dataFindings.sql.push(result.sql);
-        // 结果 ≤ 60 行自动注册为表格（与 sql_query 同款展示逻辑）
-        if (result.rows.length <= 60) {
+        // 结果非空且 ≤ 60 行才注册为表格（空结果不下发，避免前端渲染「暂无数据」空卡）
+        if (result.rows.length > 0 && result.rows.length <= 60) {
           const table: TablePayload = {
             title: `算子结果 · ${input.operatorId}`,
             columns: result.columns,
@@ -132,8 +132,8 @@ export function createSqlQueryTool(ctx: AgentRunContext) {
           schema: "data",
         });
         ctx.dataFindings.sql.push(input.sql);
-        // 自动把结果注册为表格（≤ 60 行时展示）
-        if (result.rows.length <= 60) {
+        // 结果非空且 ≤ 60 行才注册为表格（空结果不下发，避免前端渲染「暂无数据」空卡）
+        if (result.rows.length > 0 && result.rows.length <= 60) {
           const table: TablePayload = {
             title: "查询结果",
             columns: result.columns,
@@ -642,8 +642,11 @@ async function queryTableFreshness(
  * aggregate/filter 会依据指标所属数据源自动直连其 API 源取最新，而非用陈旧或空的本地数据作答。
  */
 export async function runtimeTablesHint(): Promise<string> {
-  const models = await runtimeSemanticModels();
-  const sources = await listDataSources().catch(() => [] as Array<ResolvedDataSource & { status: string }>);
+  // models 与 sources 相互独立：并行拉取，避免串行等待（server-sequential-independent-await）
+  const [models, sources] = await Promise.all([
+    runtimeSemanticModels(),
+    listDataSources().catch(() => [] as Array<ResolvedDataSource & { status: string }>),
+  ]);
   const sourceById = new Map(sources.map((s) => [s.id, s]));
   const lines = await Promise.all(
     models.map(async (m) => {

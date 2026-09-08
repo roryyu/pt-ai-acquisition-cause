@@ -222,8 +222,8 @@ function renderChart(
             }
             labelLine={false}
           >
-            {data.map((_, i) => (
-              <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+            {data.map((row, i) => (
+              <Cell key={String(row[spec.xKey])} fill={PALETTE[i % PALETTE.length]} />
             ))}
           </Pie>
         </PieChart>

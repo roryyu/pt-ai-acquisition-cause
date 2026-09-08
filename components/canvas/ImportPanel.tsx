@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { X, MessageSquareText, Telescope, Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
 
 /** 问答列表项（GET /api/v1/ask 返回结构） */
 interface QuestionItem {
@@ -62,13 +63,13 @@ export function ImportPanel({
       setLoading(true);
       setError("");
       Promise.all([
-        fetch("/api/v1/ask?page=1&pageSize=12").then((r) => r.json()).catch(() => null),
-        fetch("/api/v1/research?page=1&pageSize=12").then((r) => r.json()).catch(() => null),
+        apiFetch("/api/v1/ask?page=1&pageSize=12"),
+        apiFetch("/api/v1/research?page=1&pageSize=12"),
       ])
         .then(([askJson, researchJson]) => {
           if (cancelled) return;
-          if (askJson?.ok) setQuestions(askJson.data.questions ?? []);
-          if (researchJson?.ok) setTasks(researchJson.data.tasks ?? []);
+          if (askJson.ok) setQuestions(askJson.data.questions ?? []);
+          if (researchJson.ok) setTasks(researchJson.data.tasks ?? []);
         })
         .catch(() => {
           if (!cancelled) setError("加载导入来源失败");
@@ -173,7 +174,7 @@ export function ImportPanel({
                   <StatusDot status={q.status} />
                   {q.chartCount > 0 && <span>{q.chartCount} 张图表</span>}
                   {q.chartCount > 0 && <span>·</span>}
-                  <span>{new Date(q.createdAt).toLocaleDateString("zh-CN")}</span>
+                  <span>{new Date(q.createdAt).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}</span>
                 </p>
               </button>
             ))

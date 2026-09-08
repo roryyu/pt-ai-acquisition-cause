@@ -11,6 +11,7 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 
 interface DashboardStats {
   stats: { totalQuestions: number; totalInsights: number; totalResearch: number };
@@ -30,8 +31,7 @@ export function WorkspaceClient() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/v1/dashboard/stats");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/dashboard/stats");
       if (json.ok) {
         setData(json.data);
       } else {

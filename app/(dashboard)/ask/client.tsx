@@ -9,6 +9,7 @@ import {
   BarChart3, TrendingDown, TrendingUp, Layers, PenTool, Telescope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import type { AgentStreamState, ChartSpec, Citation, TablePayload } from "@/lib/agent-events";
 import { AgentTimeline, CitationList } from "@/components/agent/AgentTimeline";
@@ -96,8 +97,7 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
 
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/ask");
-      const json = await res.json();
+      const json = await apiFetch("/api/v1/ask");
       if (json.ok) setHistory(json.data.questions ?? []);
     } catch {
       // 静默失败
@@ -191,8 +191,7 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
       return;
     }
     try {
-      const res = await fetch(`/api/v1/ask/${id}`, { method: "DELETE" });
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/ask/${id}`, { method: "DELETE" });
       if (!json.ok) return;
       if (currentQuestionId === id) {
         setViewing(null);
@@ -220,8 +219,7 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
   const viewQuestion = useCallback(async (id: string) => {
     try {
       stop();
-      const res = await fetch(`/api/v1/ask/${id}`);
-      const json = await res.json();
+      const json = await apiFetch(`/api/v1/ask/${id}`);
       if (!json.ok) return;
       const q = json.data;
       setCurrentQuestionId(q.id);
@@ -374,8 +372,8 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
           {/* 会话线程：追问前的历史轮次（上下文内继续） */}
           {thread.length > 0 && (
             <div className="mx-auto max-w-3xl space-y-4 pb-2">
-              {thread.map((t, i) => (
-                <ThreadTurnView key={t.id ?? i} turn={t} />
+              {thread.map((t) => (
+                <ThreadTurnView key={t.id ?? `turn-${t.question}`} turn={t} />
               ))}
             </div>
           )}
@@ -387,8 +385,8 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
               <CollapsibleTimeline state={state} open={timelineOpen} onToggle={() => setTimelineOpen(!timelineOpen)} />
               {state.charts.length > 0 && (
                 <div className="grid gap-4 lg:grid-cols-2">
-                  {state.charts.map((chart, i) => (
-                    <ChartRenderer key={i} spec={chart} />
+                  {state.charts.map((chart) => (
+                    <ChartRenderer key={`${chart.type}-${chart.title}`} spec={chart} />
                   ))}
                 </div>
               )}
@@ -467,8 +465,8 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
               </div>
               {viewing.answer.charts && viewing.answer.charts.length > 0 && (
                 <div className="grid gap-4 lg:grid-cols-2">
-                  {viewing.answer.charts.map((chart, i) => (
-                    <ChartRenderer key={i} spec={chart} />
+                  {viewing.answer.charts.map((chart) => (
+                    <ChartRenderer key={`${chart.type}-${chart.title}`} spec={chart} />
                   ))}
                 </div>
               )}
@@ -674,7 +672,7 @@ function TablesSection({ tables }: { tables: TablePayload[] }) {
     <>
       {tables.map((table, i) => {
         if (!isOperatorTable(table)) {
-          return <DataTable key={i} title={table.title} columns={table.columns} rows={table.rows} note={table.note} defaultOpen={false} />;
+          return <DataTable key={`${i}-${table.title}`} title={table.title} columns={table.columns} rows={table.rows} note={table.note} defaultOpen={false} />;
         }
         // 仅在首个算子表位置渲染折叠分组，保持原有产出顺序
         if (i !== firstOperatorIdx) return null;
@@ -703,7 +701,7 @@ function OperatorResultsGroup({ tables }: { tables: TablePayload[] }) {
       {open && (
         <div className="space-y-2 border-t px-3 py-3" style={{ borderColor: "var(--line)" }}>
           {tables.map((table, i) => (
-            <DataTable key={i} title={table.title} columns={table.columns} rows={table.rows} note={table.note} defaultOpen={false} />
+            <DataTable key={`${i}-${table.title}`} title={table.title} columns={table.columns} rows={table.rows} note={table.note} defaultOpen={false} />
           ))}
         </div>
       )}

@@ -28,8 +28,15 @@ export function DataTable({
 
   const displayRows = useMemo(() => {
     const limit = expanded ? rows.length : Math.min(rows.length, 12);
-    return rows.slice(0, limit);
-  }, [rows, expanded]);
+    // 行无天然 id：用「各列内容拼接」派生稳定 key，重复行追加序号去重，避免 index-as-key
+    const seen = new Map<string, number>();
+    return rows.slice(0, limit).map((row) => {
+      const base = columns.map((c) => String(row[c] ?? "")).join("\u0000");
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return { row, rowKey: n === 0 ? base : `${base}\u0001${n}` };
+    });
+  }, [rows, expanded, columns]);
 
   if (rows.length === 0) {
     return (
@@ -72,9 +79,9 @@ export function DataTable({
               </tr>
             </thead>
             <tbody>
-              {displayRows.map((row, i) => (
+              {displayRows.map(({ row, rowKey }) => (
                 <tr
-                  key={i}
+                  key={rowKey}
                   className="border-t"
                   style={{ borderColor: "var(--line)" }}
                 >

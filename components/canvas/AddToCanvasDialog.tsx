@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, PenTool, Plus, X } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
 
 /** 画布列表项（GET /api/v1/insights 返回结构） */
 interface InsightDocItem {
@@ -56,13 +57,11 @@ export function AddToCanvasDialog({
       setNewTitle(sourceTitle ? `洞察：${sourceTitle.slice(0, 30)}` : "新洞察画布");
       setError("");
       setLoading(true);
-      fetch("/api/v1/insights?page=1&pageSize=20")
-        .then((r) => r.json())
+      apiFetch("/api/v1/insights?page=1&pageSize=20")
         .then((json) => {
-          if (!cancelled && json.ok) setDocs(json.data.docs ?? []);
-        })
-        .catch(() => {
-          if (!cancelled) setError("加载画布列表失败");
+          if (cancelled) return;
+          if (json.ok) setDocs(json.data.docs ?? []);
+          else setError("加载画布列表失败");
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -85,16 +84,16 @@ export function AddToCanvasDialog({
   /** 内联新建画布后直接携带导入跳转 */
   const handleCreate = useCallback(async () => {
     const title = newTitle.trim();
-    if (!title || creating) return;
+    if (creating) return;
+    if (!title) return;
     setCreating(true);
     setError("");
     try {
-      const res = await fetch("/api/v1/insights", {
+      const json = await apiFetch("/api/v1/insights", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind: "report" }),
       });
-      const json = await res.json();
       if (!json.ok) {
         setError(json.error?.message ?? "创建画布失败");
         return;
