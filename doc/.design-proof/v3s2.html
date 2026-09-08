@@ -1,0 +1,155 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F6F4EF;color:#16161C;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.num{font-family:'Space Grotesk',ui-monospace,monospace}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#FFFFFF;border-right:1px solid #ECE9E2;display:flex;flex-direction:column;padding:0 12px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:68px;padding:0 6px;flex:none}
+.sb-logo{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.sb-name{font-weight:800;font-size:14.5px;letter-spacing:.01em}
+.sb-badge{font-size:8.5px;font-weight:800;letter-spacing:.1em;color:#FF5C1F;background:#FFEDE4;border-radius:20px;padding:2px 8px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:12px}
+.sb-grp{font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#B7B3AA;padding:0 10px;margin:18px 0 8px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:13.5px;font-weight:600;color:#6F6C76;text-decoration:none;margin-bottom:3px}
+.nav.on{background:#16161C;color:#fff}
+.sb-foot{border-top:1px solid #ECE9E2;padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:12.5px;color:#B7B3AA;font-weight:500}
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:#F6F4EF;overflow:hidden;display:flex;gap:16px;padding:20px 24px 0}
+.hist{width:268px;flex:none;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;display:flex;flex-direction:column;margin-bottom:20px;overflow:hidden}
+.hist-hd{padding:15px 17px;border-bottom:1.5px solid #F2F0EA;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14.5px;font-weight:800}
+.hist-cnt{font-size:10.5px;font-weight:800;color:#FF5C1F;background:#FFEDE4;border-radius:999px;padding:2px 10px}
+.hist-item{padding:13px 17px;border-bottom:1.5px solid #F2F0EA}
+.hist-item.on{background:#FFF7F2;box-shadow:inset 3px 0 #FF5C1F}
+.h-t{font-size:12.5px;font-weight:600;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-meta{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:10.5px;color:#6F6C76}
+.rb{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;border-radius:999px;padding:2px 8px}
+.rb.da{color:#0FA48B;background:#DFF4EE}
+.rb.rs{color:#F2B705;background:#FCF3D4}
+.rb.dr{color:#7C3AED;background:#F1E9FF}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:20px;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;padding:22px 26px 0;display:flex;flex-direction:column;gap:14px}
+.bubble{align-self:flex-end;max-width:76%;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;border-radius:18px 18px 4px 18px;padding:11px 16px;font-size:13px;font-weight:500;line-height:1.6;box-shadow:0 6px 18px rgba(255,92,31,.25)}
+.tl{border:1.5px solid #ECE9E2;border-radius:16px;background:#FAF9F5}
+.tl-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1.5px solid #F2F0EA}
+.tl-t{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#FF5C1F;display:flex;align-items:center;gap:6px}
+.tl-t i{width:7px;height:7px;border-radius:50%;background:#0FA48B;box-shadow:0 0 0 3px #DFF4EE}
+.tl-collapse{font-size:11px;font-weight:700;color:#16161C;display:flex;align-items:center;gap:4px}
+.steps{display:flex;align-items:center;gap:0;padding:13px 16px}
+.step{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:#6F6C76}
+.step b{color:#16161C;font-weight:800}
+.step .sd{width:17px;height:17px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none;background:#F2F0EA}
+.step.done .sd{background:linear-gradient(135deg,#FF5C1F,#FF8A5C)}
+.step.done .sd svg{stroke:#fff}
+.step.ok .sd{background:linear-gradient(135deg,#0FA48B,#2EC4A6)}
+.step.ok .sd svg{stroke:#fff}
+.sep{width:26px;height:2.5px;border-radius:2px;background:repeating-linear-gradient(90deg,#E4E0D6 0 5px,transparent 5px 9px);flex:none}
+.chart{background:#fff;border:1.5px solid #ECE9E2;border-radius:16px;padding:14px 16px 10px}
+.chart-hd{display:flex;align-items:center;justify-content:space-between}
+.chart-t{font-size:13.5px;font-weight:800}
+.legend{display:flex;gap:13px;font-size:10px;font-weight:600;color:#6F6C76}
+.lg{display:flex;align-items:center;gap:5px}
+.lg i{width:10px;height:10px;border-radius:3px;display:block}
+.ans{border:1.5px solid #ECE9E2;border-radius:16px;background:#FAF9F5;padding:15px 17px}
+.ans-hd{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7C3AED;margin-bottom:8px}
+.ans p{font-size:12.5px;line-height:1.75;color:#3A3942}
+.ans .hl{color:#FF5C1F;font-weight:800}
+.ans ul{list-style:none;margin-top:8px}
+.ans li{font-size:12px;font-weight:500;line-height:1.7;color:#56545F;padding-left:16px;position:relative;margin-top:3px}
+.ans li::before{content:"";position:absolute;left:1px;top:8px;width:7px;height:7px;border-radius:2px;background:linear-gradient(135deg,#FF5C1F,#7C3AED)}
+.cite{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#6F6C76;flex-wrap:wrap}
+.cite span{background:#F2F0EA;border-radius:999px;padding:3px 10px;font-size:10px;font-weight:700;color:#56545F}
+.done-row{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;color:#6F6C76}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #E4E0D6;border-radius:999px;padding:4.5px 13px;font-size:11px;font-weight:800;color:#7C3AED;text-decoration:none}
+.pill.on{background:linear-gradient(135deg,#7C3AED,#9D6BFF);border-color:transparent;color:#fff}
+.input{border-top:1.5px solid #F2F0EA;padding:13px 16px 12px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FAF9F5;border:1.5px solid #E4E0D6;border-radius:16px;padding:9px 10px}
+.inbox:focus-within{border-color:#FF5C1F}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#16161C;font-family:inherit;font-size:12.5px;font-weight:500;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#B7B3AA}
+.send{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#B7B3AA;margin-top:7px;padding-left:2px;font-weight:500}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-badge">BETA</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>工作台</a>
+    <a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t">问答历史</span><span class="hist-cnt">128</span></div>
+    <div class="hist-item on"><div class="h-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">12 分钟前</span></div></div>
+    <div class="hist-item"><div class="h-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="h-meta"><span class="rb rs">深度研究</span><span style="color:#C9930B">分析中</span><span style="margin-left:auto">5 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="h-meta"><span class="rb dr">直接回答</span><span>已完成</span><span style="margin-left:auto">2 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">昨天</span></div></div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="bubble">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div>
+      <div class="tl">
+        <div class="tl-hd"><span class="tl-t"><i></i>Agent 推理过程 · 实时</span><span class="tl-collapse">收起过程<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m18 15-6-6-6 6"/></svg></span></div>
+        <div class="steps">
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Supervisor</b>&nbsp;意图路由</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>DataAnalyst</b>&nbsp;NL2SQL</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>执行查询</b>&nbsp;3 条 SQL</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Synthesizer</b>&nbsp;综合</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Critic</b>&nbsp;质检 8.5</div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="chart-hd"><span class="chart-t">2026 年各渠道花费与 ROI 对比</span><span class="legend"><span class="lg"><i style="background:#FF5C1F"></i>花费（万元）</span><span class="lg"><i style="background:#7C3AED"></i>ROI</span></span></div>
+        <svg width="100%" height="166" viewBox="0 0 700 166">
+          <g stroke="#F2F0EA" stroke-width="1.5">
+            <line x1="40" y1="24" x2="690" y2="24"/><line x1="40" y1="70" x2="690" y2="70"/><line x1="40" y1="116" x2="690" y2="116"/>
+          </g>
+          <text x="40" y="18" fill="#B7B3AA" font-size="9.5" font-weight="700">0</text><text x="40" y="64" fill="#B7B3AA" font-size="9.5" font-weight="700">50</text><text x="40" y="110" fill="#B7B3AA" font-size="9.5" font-weight="700">100</text>
+          <g font-size="11" fill="#6F6C76" text-anchor="middle" font-weight="700">
+            <text x="150" y="162">Meta</text><text x="350" y="162">X</text><text x="550" y="162">TikTok</text>
+          </g>
+          <g>
+            <rect x="95" y="60" width="110" height="56" rx="6" fill="#FF5C1F"/>
+            <rect x="295" y="40" width="110" height="76" rx="6" fill="#FF5C1F"/>
+            <rect x="495" y="26" width="110" height="90" rx="6" fill="#FF5C1F"/>
+            <rect x="95" y="14" width="110" height="8" rx="3" fill="#7C3AED"/>
+            <rect x="295" y="20" width="110" height="8" rx="3" fill="#7C3AED"/>
+            <rect x="495" y="10" width="110" height="8" rx="3" fill="#7C3AED"/>
+          </g>
+          <g font-family="'Space Grotesk',monospace" font-size="11" fill="#16161C" text-anchor="middle" font-weight="700">
+            <text x="150" y="52">2.6</text><text x="350" y="34">3.1</text><text x="550" y="22">4.2</text>
+          </g>
+        </svg>
+      </div>
+      <div class="ans">
+        <div class="ans-hd">综合结论</div>
+        <p>综合 2026 年 1 月至今的数据，<span class="hl">TikTok 以 4.2 的 ROI 领先</span>，其次 X（3.1）与 Meta（2.6）。下载侧 TikTok 贡献 46%，X 承接端 FD/RD 转化率最高。</p>
+        <ul><li>按 ROI 排序，预算建议向 TikTok 倾斜 20%</li><li>Meta 花费最高但 ROI 垫底，需下钻分市场定位损耗</li><li>完整明细已生成 3 条 SQL 查询，可加入画布继续编辑</li></ul>
+      </div>
+      <div class="cite">引用来源：<span>Adjust 花费报表</span><span>TikTok 广告面板</span><span>X 投放后台</span></div>
+      <div class="done-row">完成 · 耗时 <span class="num">12.6s</span><span style="margin-left:auto"><a class="pill">加入画布</a><a class="pill on">进行深入研究</a></span></div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="继续追问...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>

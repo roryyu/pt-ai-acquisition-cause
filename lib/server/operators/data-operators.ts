@@ -5,6 +5,7 @@ import { listAllSemanticModels } from "@/lib/server/semantic/model-store";
 import { listDataSources, type ResolvedDataSource } from "@/lib/server/connectors/datasources";
 import { cachedRestRequest } from "@/lib/server/connectors/api-cache";
 import { parseCsvTable, csvTableToObjects } from "@/lib/server/connectors/csv";
+import { modelDimensionSlugs, persistApiRowsToDataTable, shouldPersist } from "@/lib/server/integrations/api-ingest";
 import { env } from "@/lib/env";
 
 /**
@@ -316,6 +317,13 @@ function toNum(v: unknown): number {
 }
 
 /**
+ * 落库扩维取数路径的响应体上限（8MB）：默认 200KB 截断装不下全维度明细
+ * （天数 × 渠道 × 国家可达万行级），仅限算子内部分解落库链路使用，
+ * query_api_source 等通用工具仍维持 200KB 默认限制
+ */
+export const EXPANDED_MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+/**
  * API 源统一取数：维度/指标自动用上游 slug 构造 JSON 终端（/report）请求 →
  * cachedRestRequest（命中本地查询缓存则不请求上游，否则 API 直查并回写缓存）→ 解析为表格行。
  * 返回行列名仍为上游 slug，由调用方映射回本地语义 id。
@@ -328,8 +336,12 @@ async function fetchApiReportRows(
   metricSlugs: string[],
   datePeriod: string,
   sortSlug?: string,
+  /** 调用方所属语义模型：提供且响应覆盖模型全维度时，miss 结果分解落库到对应 data 表 */
+  model?: SemanticModelDef,
+  /** 取数选项：maxBodyBytes 放宽响应体截断限制（落库扩维路径用） */
+  opts?: { maxBodyBytes?: number },
 ): Promise<
-  | { ok: true; columns: string[]; rows: Record<string, unknown>[]; elapsedMs: number; notes: string[] }
+  | { ok: true; columns: string[]; rows: Record<string, unknown>[]; elapsedMs: number; notes: string[]; truncated: boolean }
   | { ok: false; error: string }
 > {
   const params: Record<string, string> = {
@@ -341,12 +353,16 @@ async function fetchApiReportRows(
   if (env.ADJUST_RS_UTC_OFFSET) params["utc_offset"] = env.ADJUST_RS_UTC_OFFSET;
   let result;
   try {
-    result = await cachedRestRequest(source.apiConfig!, { method: "GET", path: "report", params }, { sourceId: source.id });
+    result = await cachedRestRequest(
+      source.apiConfig!,
+      { method: "GET", path: "report", params },
+      { sourceId: source.id, maxBodyBytes: opts?.maxBodyBytes },
+    );
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   if (result.status === 204) {
-    return { ok: true, columns: [], rows: [], elapsedMs: result.elapsedMs, notes: ["区间无数据（204）"] };
+    return { ok: true, columns: [], rows: [], elapsedMs: result.elapsedMs, notes: ["区间无数据（204）"], truncated: false };
   }
   if (result.status < 200 || result.status >= 300) {
     const detail = typeof result.body === "string" ? result.body.slice(0, 300) : JSON.stringify(result.body).slice(0, 300);
@@ -371,7 +387,33 @@ async function fetchApiReportRows(
       notes.push(`上游数据预警: ${dataWarnings.join("；")}`);
     }
   }
-  return { ok: true, columns: table.columns, rows: table.rows, elapsedMs: result.elapsedMs, notes };
+  // 分解落库：真实响应（miss 且未截断）按全维度幂等 upsert 至语义模型对应的 data 表，
+  // 供后续本地 SQL/算子复用；失败仅告警不影响取数（命中缓存/截断响应不落）
+  if (model && result.cacheState === "miss" && !result.truncated && table.rows.length > 0 && shouldPersist(model, dimSlugs)) {
+    const persisted = await persistApiRowsToDataTable(model, table.rows);
+    if (persisted > 0) notes.push(`已分解落库 ${persisted} 行至 ${model.schema}.${model.table}，后续可本地查询`);
+  }
+  return { ok: true, columns: table.columns, rows: table.rows, elapsedMs: result.elapsedMs, notes, truncated: result.truncated };
+}
+
+/**
+ * 扩维明细的内存聚合（纯函数）：按 groupBy 维度的上游 slug 累加指标值，
+ * 输出本地 id 列名，按值降序（与 SQL ORDER BY 2 DESC / API sort=-metric 口径一致）；
+ * dimensionValue 提供时仅保留该维度值（扩维路径下维度值过滤在内存完成）
+ */
+export function aggregateRowsInMemory(
+  rows: Record<string, unknown>[],
+  opts: { dimSlug: string; metricSlug: string; dimId: string; metricId: string; dimensionValue?: string },
+): Record<string, unknown>[] {
+  const acc = new Map<unknown, number>();
+  for (const r of rows) {
+    const key = r[opts.dimSlug] ?? null;
+    if (opts.dimensionValue !== undefined && String(key) !== opts.dimensionValue) continue;
+    acc.set(key, (acc.get(key) ?? 0) + toNum(r[opts.metricSlug]));
+  }
+  return [...acc.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => ({ [opts.dimId]: key, [opts.metricId]: Math.round(value * 100) / 100 }));
 }
 
 // ─── AggregateOp：分组聚合 ────────────────────────────────────────────────────
@@ -427,9 +469,35 @@ export async function runAggregateOp(input: z.infer<typeof AggregateInput>): Pro
   if (apiSource) {
     const dimSlug = dim.apiSlug ?? dim.column;
     const metricSlug = entry.apiSlug ?? entry.column;
-    const res = await fetchApiReportRows(apiSource, [dimSlug], [metricSlug], apiDatePeriod(input), metricSlug);
+    const datePeriod = apiDatePeriod(input);
+    const model = models.find((m) => m.id === entry.modelId);
+    // 第一段：扩维请求模型全维度明细（放宽响应限制）——真实响应（miss）自动分解落库 data 表，
+    // 同时内存按 groupBy 聚合返回，输出形态与单维度直查一致；上游拒绝维度组合或响应过大
+    // （截断）时自动回退第二段单维度请求（原有行为，不落库）
+    if (model && model.dimensions.length > 0) {
+      const expanded = await fetchApiReportRows(
+        apiSource, modelDimensionSlugs(model), [metricSlug], datePeriod, undefined, model,
+        { maxBodyBytes: EXPANDED_MAX_BODY_BYTES },
+      );
+      if (expanded.ok && !expanded.truncated) {
+        const rows = aggregateRowsInMemory(expanded.rows, {
+          dimSlug, metricSlug, dimId: dim.id, metricId: entry.id, dimensionValue: input.dimensionValue,
+        });
+        return {
+          ok: true, operatorId: "aggregate", columns: [dim.id, entry.id], rows,
+          rowCount: rows.length, elapsedMs: Date.now() - start,
+          notes: [
+            `指标 ${entry.id}（${entry.name}）来自 API 源「${apiSource.name}」，已扩维取全维度明细并按 ${dim.id} 内存聚合（真实响应自动分解落库）`,
+            ...expanded.notes,
+          ],
+        };
+      }
+    }
+    // 第二段（回退）：单维度直查，上游已按维度聚合、响应小；粒度不足不落库（既定方案）
+    const res = await fetchApiReportRows(apiSource, [dimSlug], [metricSlug], datePeriod, metricSlug);
     if (!res.ok) return failed("aggregate", new Error(res.error), start);
-    const rows = res.rows.map((r) => ({ [dim.id]: r[dimSlug] ?? null, [entry.id]: toNum(r[metricSlug]) }));
+    let rows = res.rows.map((r) => ({ [dim.id]: r[dimSlug] ?? null, [entry.id]: toNum(r[metricSlug]) }));
+    if (input.dimensionValue !== undefined) rows = rows.filter((r) => String(r[dim.id]) === input.dimensionValue);
     return {
       ok: true, operatorId: "aggregate", columns: [dim.id, entry.id], rows,
       rowCount: rows.length, elapsedMs: Date.now() - start,
@@ -665,11 +733,20 @@ export async function runFilterOp(input: z.infer<typeof FilterInput>): Promise<O
   const apiSource = await resolveApiSource(model.dataSourceId);
   if (apiSource) {
     const metricFields = model.metrics.filter((m) => m.agg !== "none" && !FILTER_BOUND_METRICS.has(m.id));
-    const dimSlugs = dims.map((d) => d.apiSlug ?? d.column);
+    // API 请求附带时间维度（时间列为日期列时）：响应覆盖模型全维度，
+    // 既得到按日明细，也使结果满足分解落库 data 表的粒度条件（缺失时是区间汇总，粒度不足）
+    const timeDim = model.timeColumn !== "id"
+      ? model.dimensions.find((d) => d.column === model.timeColumn)
+      : undefined;
+    const dimsForApi: OperatorDimensionEntry[] = timeDim ? [...dims, timeDim] : dims;
+    const dimSlugs = dimsForApi.map((d) => d.apiSlug ?? d.column);
     const metricSlugs = metricFields.map((m) => m.apiSlug ?? m.column);
-    const res = await fetchApiReportRows(apiSource, dimSlugs, metricSlugs, apiDatePeriod(input));
+    // 放宽响应限制：大区间全维度明细易超默认 200KB 截断，导致无法落库
+    const res = await fetchApiReportRows(apiSource, dimSlugs, metricSlugs, apiDatePeriod(input), undefined, model, {
+      maxBodyBytes: EXPANDED_MAX_BODY_BYTES,
+    });
     if (!res.ok) return failed("filter", new Error(res.error), start);
-    const dimIdBySlug = new Map(dims.map((d) => [d.apiSlug ?? d.column, d.id]));
+    const dimIdBySlug = new Map(dimsForApi.map((d) => [d.apiSlug ?? d.column, d.id]));
     const metIdBySlug = new Map(metricFields.map((m) => [m.apiSlug ?? m.column, m.id]));
     let rows = res.rows.map((r) => {
       const out: Record<string, unknown> = {};
@@ -682,7 +759,7 @@ export async function runFilterOp(input: z.infer<typeof FilterInput>): Promise<O
     for (const [dimId, value] of Object.entries(filters)) rows = rows.filter((r) => String(r[dimId]) === value);
     return {
       ok: true, operatorId: "filter",
-      columns: [...dims.map((d) => d.id), ...metricFields.map((m) => m.id)],
+      columns: [...dimsForApi.map((d) => d.id), ...metricFields.map((m) => m.id)],
       rows, rowCount: rows.length, elapsedMs: Date.now() - start,
       notes: [
         `模型「${model.name}」来自 API 源「${apiSource.name}」，经本地缓存+API直查取全维度明细（自动 slug 映射）`,

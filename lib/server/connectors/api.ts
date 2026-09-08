@@ -76,17 +76,18 @@ export function parseRetryAfterMs(header: string | null): number | undefined {
 async function fetchWithLimits(
   url: string,
   init: RequestInit,
+  maxBodyBytes: number = MAX_BODY_BYTES,
 ): Promise<{ status: number; contentType: string; body: string; truncated: boolean; retryAfterMs?: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     const raw = await response.text();
-    const truncated = raw.length > MAX_BODY_BYTES;
+    const truncated = raw.length > maxBodyBytes;
     return {
       status: response.status,
       contentType: response.headers.get("content-type") ?? "",
-      body: truncated ? raw.slice(0, MAX_BODY_BYTES) : raw,
+      body: truncated ? raw.slice(0, maxBodyBytes) : raw,
       truncated,
       // 仅限流/服务不可用时读取，供上层指数退避（Adjust 速率限制 50 req/s，超限返回 429）
       ...(response.status === 429 || response.status === 503
@@ -234,10 +235,12 @@ export function parseBody(raw: string, contentType: string): unknown {
   return raw;
 }
 
-/** 执行 REST 请求（仅 GET/POST） */
+/** 执行 REST 请求（仅 GET/POST）；maxBodyBytes 可放宽响应体截断限制（缺省 200KB，
+ * 供算子落库扩维取数等大明细场景使用，见 data-operators 的 EXPANDED_MAX_BODY_BYTES） */
 export async function executeRestRequest(
   config: ApiSourceConfig,
   input: RestRequestInput,
+  opts?: { maxBodyBytes?: number },
 ): Promise<ApiCallResult> {
   const check = assertHttpUrl(config.endpoint);
   if (!check.ok) throw new Error(check.reason);
@@ -254,7 +257,7 @@ export async function executeRestRequest(
       ...buildAuthHeaders(config),
     },
     body: input.method === "POST" && input.body !== undefined ? JSON.stringify(input.body) : undefined,
-  });
+  }, opts?.maxBodyBytes);
   return {
     status: result.status,
     contentType: result.contentType,

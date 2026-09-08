@@ -27,17 +27,24 @@ vi.mock("@/lib/server/connectors/api-cache", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/connectors/api-cache")>();
   return { ...actual, cachedRestRequest: vi.fn() };
 });
+// 分解落库：保留纯函数真实实现，仅 mock 写库入口（逐案断言触发/不触发）
+vi.mock("@/lib/server/integrations/api-ingest", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/server/integrations/api-ingest")>();
+  return { ...actual, persistApiRowsToDataTable: vi.fn(async () => 0) };
+});
 
 import {
   operatorMetricCatalog, operatorDimensionsForModel, aggExprOf, resolveMetricEntry,
   buildAggregateSql, buildTimeSeriesSql, buildAnomalySql,
   buildFilterSql, buildTransformSql, buildJoinSql,
+  aggregateRowsInMemory, EXPANDED_MAX_BODY_BYTES,
   type OperatorDimensionEntry,
 } from "@/lib/server/operators/data-operators";
 import { runOperator, listOperators } from "@/lib/server/operators/registry";
 import { executeReadOnlyQuery } from "@/lib/server/connectors/postgres";
 import { listDataSources } from "@/lib/server/connectors/datasources";
 import { cachedRestRequest } from "@/lib/server/connectors/api-cache";
+import { persistApiRowsToDataTable } from "@/lib/server/integrations/api-ingest";
 import { listAllSemanticModels } from "@/lib/server/semantic/model-store";
 import { DEMO_SEMANTIC_MODELS, type SemanticModelDef } from "@/lib/server/semantic/semantic-query";
 
@@ -45,6 +52,7 @@ const queryMock = vi.mocked(executeReadOnlyQuery);
 const listDataSourcesMock = vi.mocked(listDataSources);
 const cachedRestRequestMock = vi.mocked(cachedRestRequest);
 const listAllModelsMock = vi.mocked(listAllSemanticModels);
+const persistMock = vi.mocked(persistApiRowsToDataTable);
 
 beforeEach(() => {
   queryMock.mockReset();
@@ -376,9 +384,10 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
     listAllModelsMock.mockResolvedValue([...DEMO_SEMANTIC_MODELS, ADJUST_MODEL] as never);
     listDataSourcesMock.mockResolvedValue([ADJUST_SOURCE]);
     cachedRestRequestMock.mockReset();
+    persistMock.mockClear();
   });
 
-  it("aggregate：API 源指标经 cachedRestRequest 直查，自动用上游 slug，列名映射回本地 id，不触达本地 SQL", async () => {
+  it("aggregate：API 源指标自动扩维取全维度明细（放宽响应限制）并内存聚合，列名映射回本地 id，不触达本地 SQL", async () => {
     cachedRestRequestMock.mockResolvedValue({
       status: 200, contentType: "application/json",
       body: { rows: [{ network: "web", register_events: 42 }, { network: "gadmobe-apk", register_events: 7 }], totals: { register_events: 49 } },
@@ -392,33 +401,197 @@ describe("统一取数分流层（API 源自动本地缓存+API 直查，PG 源�
     expect(config.endpoint).toBe("https://rs.adjust.com/reports-service");
     expect(request.path).toBe("report");                              // JSON 终端（额外获得 totals 校验）
     expect(request.params?.["metrics"]).toBe("register_events");   // 本地 register_cnt → 上游 slug
-    expect(request.params?.["dimensions"]).toBe("network");
+    // 扩维请求模型全维度（含时间维度 day）：响应满足分解落库粒度条件
+    expect(request.params?.["dimensions"]).toBe("network,country_code,day");
     expect(request.params?.["date_period"]).toBe("2026-09-03:2026-09-03");
     expect(options.sourceId).toBe("data_source_adjust");
+    expect(options.maxBodyBytes).toBe(EXPANDED_MAX_BODY_BYTES);      // 扩维路径放宽 200KB 默认限制
     expect(queryMock).not.toHaveBeenCalled();                       // 未走本地 SQL
     expect(result.columns).toEqual(["network", "register_cnt"]);    // 列名映射回本地 id
-    expect(result.rows[0]).toEqual({ network: "web", register_cnt: 42 });
+    expect(result.rows[0]).toEqual({ network: "web", register_cnt: 42 }); // 内存按 groupBy 聚合，输出形态不变
     // JSON 终端 totals 写入 notes（口径校验用）
     expect(result.notes.join(" ")).toContain("API totals 区间总量");
+    expect(result.notes.join(" ")).toContain("内存聚合");
+    // 扩维后 miss 真实响应覆盖全维度 → 触发分解落库（仅响应实际返回的指标列）
+    expect(persistMock).toHaveBeenCalledTimes(1);
+    expect(persistMock.mock.calls[0]![0].id).toBe("semantic_model_adjust_daily");
   });
 
-  it("filter：API 源模型经 cachedRestRequest 取全维度明细，slug 自动映射回本地 id（CSV 响应兼容）", async () => {
+  it("filter：API 源模型经 cachedRestRequest 取全维度明细（含时间维度），slug 自动映射回本地 id（CSV 响应兼容）", async () => {
     cachedRestRequestMock.mockResolvedValue({
       status: 200, contentType: "text/csv",
-      body: "network,country_code,installs,register_events,firstdeposit_events\nweb,us,100,42,7\n",
+      body: "network,country_code,day,installs,register_events,firstdeposit_events\nweb,us,2026-09-03,100,42,7\n",
       elapsedMs: 400, truncated: false, fromCache: false, cacheState: "miss",
     } as never);
     const result = await runOperator("filter", {
       model: "semantic_model_adjust_daily", from: "2026-09-03", to: "2026-09-03",
     });
     expect(result.ok).toBe(true);
-    const [, request] = cachedRestRequestMock.mock.calls[0]!;
+    const [, request, options] = cachedRestRequestMock.mock.calls[0]!;
     expect(request.path).toBe("report");
-    expect(request.params?.["dimensions"]).toBe("network,country_code");
+    // 请求附带时间维度（day）：按日明细，且满足分解落库的全维度粒度条件
+    expect(request.params?.["dimensions"]).toBe("network,country_code,day");
     expect(request.params?.["metrics"]).toBe("installs,register_events,firstdeposit_events");
+    expect(options.maxBodyBytes).toBe(EXPANDED_MAX_BODY_BYTES);   // 大区间明细放宽 200KB 默认截断
     expect(queryMock).not.toHaveBeenCalled();
-    expect(result.columns).toEqual(["network", "country_code", "installs", "register_cnt", "first_deposit_cnt"]);
-    expect(result.rows[0]).toEqual({ network: "web", country_code: "us", installs: 100, register_cnt: 42, first_deposit_cnt: 7 });
+    expect(result.columns).toEqual(["network", "country_code", "stat_date", "installs", "register_cnt", "first_deposit_cnt"]);
+    expect(result.rows[0]).toEqual({ network: "web", country_code: "us", stat_date: "2026-09-03", installs: 100, register_cnt: 42, first_deposit_cnt: 7 });
+  });
+
+  it("filter：miss 真实响应触发分解落库（传入语义模型与上游 slug 行），行数写入 notes", async () => {
+    persistMock.mockResolvedValue(1);
+    cachedRestRequestMock.mockResolvedValue({
+      status: 200, contentType: "text/csv",
+      body: "network,country_code,day,installs,register_events,firstdeposit_events\nweb,us,2026-09-03,100,42,7\n",
+      elapsedMs: 400, truncated: false, fromCache: false, cacheState: "miss",
+    } as never);
+    const result = await runOperator("filter", {
+      model: "semantic_model_adjust_daily", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(persistMock).toHaveBeenCalledTimes(1);
+    expect(persistMock.mock.calls[0]![0].id).toBe("semantic_model_adjust_daily");
+    // 落库收到的是上游 slug 原始行（映射由 ingest 模块内部完成）
+    expect(persistMock.mock.calls[0]![1][0]).toMatchObject({ day: "2026-09-03", network: "web", register_events: 42 });
+    expect(result.notes.join(" ")).toContain("已分解落库 1 行至 data.adjust_daily_metrics");
+  });
+
+  it("filter：命中查询缓存（fresh）不触发分解落库（数据首次 miss 时已落过）", async () => {
+    cachedRestRequestMock.mockResolvedValue({
+      status: 200, contentType: "text/csv",
+      body: "network,country_code,day,installs,register_events,firstdeposit_events\nweb,us,2026-09-03,100,42,7\n",
+      elapsedMs: 5, truncated: false, fromCache: true, cacheState: "fresh",
+    } as never);
+    const result = await runOperator("filter", {
+      model: "semantic_model_adjust_daily", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("filter：截断响应不落库（数据不完整）", async () => {
+    cachedRestRequestMock.mockResolvedValue({
+      status: 200, contentType: "text/csv",
+      body: "network,country_code,day,installs,register_events,firstdeposit_events\nweb,us,2026-09-03,100,42,7\n",
+      elapsedMs: 400, truncated: true, fromCache: false, cacheState: "miss",
+    } as never);
+    const result = await runOperator("filter", {
+      model: "semantic_model_adjust_daily", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  // ─── aggregate 扩维落库与自动回退 ────────────────────────────────────
+
+  const EXPANDED_CSV =
+    "network,country_code,day,register_events\nweb,us,2026-09-03,30\nweb,jp,2026-09-03,12\ngadmobe-apk,us,2026-09-03,7\n";
+
+  it("aggregate：扩维 miss 真实响应分解落库，内存聚合多行明细为分组值，行数写入 notes", async () => {
+    persistMock.mockResolvedValue(730);
+    cachedRestRequestMock.mockResolvedValue({
+      status: 200, contentType: "text/csv", body: EXPANDED_CSV,
+      elapsedMs: 600, truncated: false, fromCache: false, cacheState: "miss",
+    } as never);
+    const result = await runOperator("aggregate", {
+      metric: "register_cnt", groupBy: "network", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(cachedRestRequestMock).toHaveBeenCalledTimes(1);          // 扩维成功不回退
+    // 按日×国家明细内存累加：web=30+12、gadmobe-apk=7，按值降序
+    expect(result.rows).toEqual([
+      { network: "web", register_cnt: 42 },
+      { network: "gadmobe-apk", register_cnt: 7 },
+    ]);
+    expect(persistMock).toHaveBeenCalledTimes(1);
+    expect(result.notes.join(" ")).toContain("已分解落库 730 行至 data.adjust_daily_metrics");
+  });
+
+  it("aggregate：扩维响应截断（超过放宽后的上限）→ 自动回退单维度请求，不落库、输出同旧行为", async () => {
+    cachedRestRequestMock.mockImplementation(async (_config, request) => {
+      if (request.params?.["dimensions"] === "network,country_code,day") {
+        return { status: 200, contentType: "text/csv", body: EXPANDED_CSV, elapsedMs: 800, truncated: true, fromCache: false, cacheState: "miss" } as never;
+      }
+      return {
+        status: 200, contentType: "application/json",
+        body: { rows: [{ network: "web", register_events: 42 }, { network: "gadmobe-apk", register_events: 7 }] },
+        elapsedMs: 100, truncated: false, fromCache: false, cacheState: "miss",
+      } as never;
+    });
+    const result = await runOperator("aggregate", {
+      metric: "register_cnt", groupBy: "network", from: "2026-06-01", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(cachedRestRequestMock).toHaveBeenCalledTimes(2);
+    const [, fallbackReq, fallbackOpts] = cachedRestRequestMock.mock.calls[1]!;
+    expect(fallbackReq.params?.["dimensions"]).toBe("network");      // 回退单维度
+    expect(fallbackReq.params?.["sort"]).toBe("-register_events");   // 回退路径保留上游排序
+    expect(fallbackOpts.maxBodyBytes).toBeUndefined();               // 回退路径维持 200KB 默认限制
+    expect(result.rows[0]).toEqual({ network: "web", register_cnt: 42 });
+    expect(persistMock).not.toHaveBeenCalled();                      // 截断/单维度均不落库
+  });
+
+  it("aggregate：上游拒绝扩维维度组合（非 2xx）→ 自动回退单维度请求", async () => {
+    cachedRestRequestMock.mockImplementation(async (_config, request) => {
+      if (request.params?.["dimensions"] === "network,country_code,day") {
+        return { status: 400, contentType: "application/json", body: { message: "invalid dimension combination" }, elapsedMs: 50, truncated: false, fromCache: false, cacheState: "miss" } as never;
+      }
+      return {
+        status: 200, contentType: "application/json",
+        body: { rows: [{ network: "web", register_events: 42 }] },
+        elapsedMs: 100, truncated: false, fromCache: false, cacheState: "miss",
+      } as never;
+    });
+    const result = await runOperator("aggregate", {
+      metric: "register_cnt", groupBy: "network", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(cachedRestRequestMock).toHaveBeenCalledTimes(2);
+    expect(result.rows).toEqual([{ network: "web", register_cnt: 42 }]);
+    expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("aggregate：扩维 204（区间无数据）直接返回空聚合，不再回退重复请求", async () => {
+    cachedRestRequestMock.mockResolvedValue({
+      status: 204, contentType: "", body: "", elapsedMs: 80, truncated: false, fromCache: false, cacheState: "miss",
+    } as never);
+    const result = await runOperator("aggregate", {
+      metric: "register_cnt", groupBy: "network", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(cachedRestRequestMock).toHaveBeenCalledTimes(1);
+    expect(result.rows).toEqual([]);
+    expect(result.notes.join(" ")).toContain("区间无数据（204）");
+    expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("aggregate：dimensionValue 过滤在扩维内存聚合中生效（仅保留该维度值）", async () => {
+    cachedRestRequestMock.mockResolvedValue({
+      status: 200, contentType: "text/csv", body: EXPANDED_CSV,
+      elapsedMs: 600, truncated: false, fromCache: false, cacheState: "miss",
+    } as never);
+    const result = await runOperator("aggregate", {
+      metric: "register_cnt", groupBy: "network", dimensionValue: "gadmobe-apk", from: "2026-09-03", to: "2026-09-03",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.rows).toEqual([{ network: "gadmobe-apk", register_cnt: 7 }]);
+  });
+
+  it("aggregateRowsInMemory：按维度累加、值降序、保留两位小数（纯函数）", () => {
+    const rows = aggregateRowsInMemory(
+      [
+        { network: "web", day: "2026-09-02", register_events: 10.5 },
+        { network: "web", day: "2026-09-03", register_events: 31.62 },
+        { network: "app", day: "2026-09-03", register_events: 7 },
+        { day: "2026-09-03", register_events: 99 },                 // 维度值缺失 → 归入 null 组
+      ],
+      { dimSlug: "network", metricSlug: "register_events", dimId: "network", metricId: "register_cnt" },
+    );
+    expect(rows).toEqual([
+      { network: null, register_cnt: 99 },
+      { network: "web", register_cnt: 42.12 },
+      { network: "app", register_cnt: 7 },
+    ]);
   });
 
   it("命中查询缓存（fresh）时 notes 标注未请求上游", async () => {

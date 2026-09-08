@@ -1,0 +1,154 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F4F0E6;color:#23201A;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.serif{font-family:'Playfair Display','Noto Serif SC','Songti SC','STSong',serif}
+.caps{letter-spacing:.16em;text-transform:uppercase}
+.sb{position:absolute;left:0;top:0;bottom:0;width:224px;background:#EDE7D8;border-right:1px solid #E0D7C2;display:flex;flex-direction:column;padding:0 14px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:11px;height:78px;border-bottom:1px solid #E0D7C2;flex:none}
+.sb-logo{width:30px;height:30px;background:#21594A;color:#F4F0E6;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.sb-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.sb-nav{flex:1;overflow:hidden;padding-top:16px}
+.sb-grp{font-size:9px;font-weight:600;color:#A67C3D;padding:0 10px;margin:20px 0 8px}
+.nav{display:flex;align-items:center;gap:11px;padding:9.5px 10px;border-radius:6px;font-size:13px;color:#837C6E;text-decoration:none}
+.nav.on{color:#21594A;font-weight:600;background:#FCFAF4;box-shadow:inset 2px 0 #A67C3D}
+.sb-foot{border-top:1px solid #E0D7C2;padding:12px 0 16px;flex:none}
+.foot-item{display:flex;align-items:center;gap:11px;padding:8px 10px;font-size:12px;color:#A39887}
+.main{position:absolute;left:224px;top:0;right:0;bottom:0;background:#F4F0E6;overflow:hidden;display:flex;gap:20px;padding:24px 28px 0}
+.hist{width:272px;flex:none;background:#FCFAF4;border:1px solid #E3DBC8;display:flex;flex-direction:column;margin-bottom:24px;overflow:hidden}
+.hist-hd{padding:15px 18px;border-bottom:1px solid #E3DBC8;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.hist-cnt{font-size:10px;color:#A67C3D;border:1px solid #DCCFB2;border-radius:12px;padding:1px 8px;font-weight:600}
+.hist-item{padding:13px 18px;border-bottom:1px solid #F0E8D6}
+.hist-item.on{background:#F7F3E9;box-shadow:inset 2.5px 0 #A67C3D}
+.h-t{font-size:12.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-meta{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:10.5px;color:#837C6E}
+.rb{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:600;padding:1.5px 7px;border:1px solid transparent}
+.rb.da{color:#21594A;border-color:#C9D9CE;background:#F0F5F0}
+.rb.rs{color:#B4635F;border-color:#E4CBC3;background:#FAF2EF}
+.rb.dr{color:#5B7290;border-color:#CBD6E0;background:#F1F4F7}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:24px;background:#FCFAF4;border:1px solid #E3DBC8;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;padding:19px 30px 0;display:flex;flex-direction:column;gap:13px}
+.bubble{align-self:flex-end;max-width:76%;background:#21594A;color:#F7F3E9;border-radius:14px 14px 3px 14px;padding:11px 16px;font-size:13px;line-height:1.65}
+.tl{border:1px solid #E3DBC8;background:#F7F3E9}
+.tl-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 15px;border-bottom:1px solid #E8DFC9}
+.tl-t{font-size:10px;font-weight:600;color:#A67C3D}
+.tl-collapse{font-size:11px;color:#21594A;font-weight:600;display:flex;align-items:center;gap:4px}
+.steps{display:flex;align-items:center;gap:0;padding:9px 17px}
+.step{display:flex;align-items:center;gap:8px;font-size:11px;color:#837C6E}
+.step b{color:#23201A;font-weight:600}
+.step .sd{width:16px;height:16px;border-radius:50%;border:1px solid #CFC4A8;display:flex;align-items:center;justify-content:center;flex:none;background:#FCFAF4}
+.step.done .sd{border-color:#21594A;background:#21594A}
+.step.done .sd svg{stroke:#F7F3E9}
+.step.ok .sd{border-color:#A67C3D;background:#A67C3D}
+.step.ok .sd svg{stroke:#F7F3E9}
+.sep{width:30px;height:1px;background:#D8CDB2;flex:none}
+.chart{background:#FCFAF4;border:1px solid #E3DBC8;padding:14px 16px 10px}
+.chart-hd{display:flex;align-items:center;justify-content:space-between}
+.chart-t{font-size:13px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.legend{display:flex;gap:13px;font-size:10px;color:#837C6E}
+.lg{display:flex;align-items:center;gap:5px}
+.lg i{width:14px;height:3px;display:block}
+.ans{border:1px solid #E3DBC8;background:#FCFAF4;padding:16px 18px}
+.ans-hd{font-size:9.5px;font-weight:600;color:#A67C3D;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid #EFE7D4}
+.ans p{font-size:12.5px;line-height:1.8;color:#3A362E}
+.ans .hl{color:#21594A;font-weight:600}
+.ans ul{list-style:none;margin-top:8px}
+.ans li{font-size:12px;line-height:1.75;color:#55504A;padding-left:15px;position:relative;margin-top:3px}
+.ans li::before{content:"—";position:absolute;left:0;top:0;color:#A67C3D}
+.cite{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#837C6E;flex-wrap:wrap}
+.cite span{border:1px solid #DCCFB2;border-radius:2px;padding:3px 9px;font-size:10px;color:#55504A}
+.done-row{display:flex;align-items:center;gap:10px;font-size:11px;color:#837C6E}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid #DCCFB2;padding:4px 12px;font-size:11px;color:#21594A;font-weight:600;text-decoration:none}
+.pill.on{background:#21594A;border-color:#21594A;color:#F7F3E9}
+.input{border-top:1px solid #E3DBC8;padding:13px 17px 12px;flex:none;background:#F7F3E9}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FCFAF4;border:1px solid #D6CBB2;padding:9px 10px}
+.inbox:focus-within{border-color:#21594A}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#23201A;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#A39887}
+.send{width:34px;height:34px;background:#21594A;border:0;color:#F7F3E9;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#A39887;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo serif">归</div><span class="sb-name serif">归因模块</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp caps">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7.5" height="7.5"/><rect x="13.5" y="3" width="7.5" height="7.5"/><rect x="3" y="13.5" width="7.5" height="7.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp caps">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t serif">问答历史</span><span class="hist-cnt">128</span></div>
+    <div class="hist-item on"><div class="h-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">12 分钟前</span></div></div>
+    <div class="hist-item"><div class="h-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="h-meta"><span class="rb rs">深度研究</span><span style="color:#B4635F">分析中</span><span style="margin-left:auto">5 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="h-meta"><span class="rb dr">直接回答</span><span>已完成</span><span style="margin-left:auto">2 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">昨天</span></div></div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="bubble">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div>
+      <div class="tl">
+        <div class="tl-hd"><span class="tl-t caps">Agent 推理过程 · 实时</span><span class="tl-collapse">收起过程<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 15-6-6-6 6"/></svg></span></div>
+        <div class="steps">
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Supervisor</b>&nbsp;意图路由</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>DataAnalyst</b>&nbsp;NL2SQL</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>执行查询</b>&nbsp;3 条 SQL</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Synthesizer</b>&nbsp;综合</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Critic</b>&nbsp;质检 8.5</div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="chart-hd"><span class="chart-t serif">2026 年各渠道花费与 ROI 对比</span><span class="legend"><span class="lg"><i style="background:#21594A"></i>花费（万元）</span><span class="lg"><i style="background:#A67C3D"></i>ROI</span></span></div>
+        <svg width="100%" height="152" viewBox="0 0 700 168">
+          <g stroke="#EDE4CD" stroke-width="1">
+            <line x1="40" y1="26" x2="690" y2="26"/><line x1="40" y1="72" x2="690" y2="72"/><line x1="40" y1="118" x2="690" y2="118"/>
+          </g>
+          <text x="40" y="20" fill="#A39887" font-size="9.5">0</text><text x="40" y="66" fill="#A39887" font-size="9.5">50</text><text x="40" y="112" fill="#A39887" font-size="9.5">100</text>
+          <g font-size="10" fill="#837C6E" text-anchor="middle">
+            <text x="150" y="164">Meta</text><text x="350" y="164">X</text><text x="550" y="164">TikTok</text>
+          </g>
+          <g>
+            <rect x="95" y="62" width="110" height="56" rx="1" fill="#21594A"/>
+            <rect x="295" y="42" width="110" height="76" rx="1" fill="#21594A"/>
+            <rect x="495" y="28" width="110" height="90" rx="1" fill="#21594A"/>
+            <rect x="95" y="14" width="110" height="6" fill="#A67C3D"/>
+            <rect x="295" y="20" width="110" height="6" fill="#A67C3D"/>
+            <rect x="495" y="10" width="110" height="6" fill="#A67C3D"/>
+          </g>
+          <g font-size="10.5" fill="#23201A" text-anchor="middle" font-family="'Playfair Display',serif">
+            <text x="150" y="52">2.6</text><text x="350" y="34">3.1</text><text x="550" y="22">4.2</text>
+          </g>
+        </svg>
+      </div>
+      <div class="ans">
+        <div class="ans-hd caps">综合结论</div>
+        <p>综合 2026 年 1 月至今的数据，<span class="hl">TikTok 以 4.2 的 ROI 领先</span>，其次 X（3.1）与 Meta（2.6）。下载侧 TikTok 贡献 46%，X 承接端 FD/RD 转化率最高。</p>
+        <ul><li>按 ROI 排序，预算建议向 TikTok 倾斜 20%</li><li>Meta 花费最高但 ROI 垫底，需下钻分市场定位损耗</li><li>完整明细已生成 3 条 SQL 查询，可加入画布继续编辑</li></ul>
+      </div>
+      <div class="cite">引用来源：<span>Adjust 花费报表</span><span>TikTok 广告面板</span><span>X 投放后台</span></div>
+      <div class="done-row">完成 · 耗时 <span>12.6s</span><span style="margin-left:auto"><a class="pill">加入画布</a><a class="pill on">进行深入研究</a></span></div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="继续追问...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>

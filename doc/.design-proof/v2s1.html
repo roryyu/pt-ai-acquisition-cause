@@ -1,0 +1,141 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F4F0E6;color:#23201A;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.serif{font-family:'Playfair Display','Noto Serif SC','Songti SC','STSong',serif}
+.caps{letter-spacing:.16em;text-transform:uppercase}
+/* ── 侧边栏 ── */
+.sb{position:absolute;left:0;top:0;bottom:0;width:224px;background:#EDE7D8;border-right:1px solid #E0D7C2;display:flex;flex-direction:column;padding:0 14px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:11px;height:78px;border-bottom:1px solid #E0D7C2;flex:none}
+.sb-logo{width:30px;height:30px;background:#21594A;color:#F4F0E6;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.sb-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.sb-nav{flex:1;overflow:hidden;padding-top:16px}
+.sb-grp{font-size:9px;font-weight:600;color:#A67C3D;padding:0 10px;margin:20px 0 8px}
+.nav{display:flex;align-items:center;gap:11px;padding:9.5px 10px;border-radius:6px;font-size:13px;color:#837C6E;text-decoration:none}
+.nav:hover{color:#23201A}
+.nav.on{color:#21594A;font-weight:600;background:#FCFAF4;box-shadow:inset 2px 0 #A67C3D}
+.sb-foot{border-top:1px solid #E0D7C2;padding:12px 0 16px;flex:none}
+.foot-item{display:flex;align-items:center;gap:11px;padding:8px 10px;font-size:12px;color:#A39887}
+/* ── 主区 ── */
+.main{position:absolute;left:224px;top:0;right:0;bottom:0;padding:34px 44px 26px;background:#F4F0E6;overflow:hidden;display:flex;flex-direction:column}
+.hd{display:flex;align-items:flex-end;justify-content:space-between;flex:none;border-bottom:1px solid #E0D7C2;padding-bottom:22px}
+.hd-eyebrow{font-size:10px;font-weight:600;color:#A67C3D}
+h1{font-size:31px;font-weight:600;line-height:1.25;margin-top:8px}
+.hd-sub{font-size:13px;color:#837C6E;margin-top:7px}
+.hd-right{display:flex;align-items:center;gap:12px;padding-bottom:4px}
+.btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 18px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid transparent}
+.btn.primary{background:#21594A;color:#F7F3E9}
+.btn.ghost{border-color:#D6CBB2;color:#55504A;background:transparent}
+.avatar{width:34px;height:34px;border-radius:50%;background:#A67C3D;color:#F7F3E9;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+/* ── 统计卡 ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:24px;flex:none}
+.card{background:#FCFAF4;border:1px solid #E3DBC8;padding:20px 22px;position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#A67C3D}
+.card:nth-child(2)::before{background:#B4635F}
+.card:nth-child(3)::before{background:#5B7290}
+.card-label{font-size:10px;font-weight:600;color:#A67C3D;display:flex;align-items:center;gap:8px}
+.card-label svg{opacity:.9}
+.card-val{font-size:35px;font-weight:600;line-height:1.15;color:#21594A;margin-top:10px}
+.card-val .unit{font-size:14px;color:#A39887;font-weight:500;margin-left:5px}
+.delta{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;color:#21594A;border-top:1px solid #E3DBC8;margin-top:12px;padding-top:9px}
+.delta.flat{color:#837C6E}
+/* ── 快捷入口 ── */
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px;flex:none}
+.qcard{background:#FCFAF4;border:1px solid #E3DBC8;padding:17px 19px;display:flex;gap:14px;align-items:center}
+.qic{width:38px;height:38px;border:1px solid #D6CBB2;display:flex;align-items:center;justify-content:center;flex:none;color:#21594A;background:#F4F0E6}
+.qt{font-size:13.5px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.qd{font-size:11.5px;color:#837C6E;margin-top:3px}
+/* ── 双栏列表 ── */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;flex:1;min-height:0}
+.sec{display:flex;flex-direction:column;min-height:0}
+.sec-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;flex:none}
+.sec-t{font-size:14.5px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.sec-more{font-size:11px;color:#A67C3D;text-decoration:none;display:flex;align-items:center;gap:5px;font-weight:600}
+.list{background:#FCFAF4;border:1px solid #E3DBC8;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 18px;border-bottom:1px solid #EFE7D4}
+.row:last-child{border-bottom:0}
+.r-main{min-width:0}
+.r-t{font-size:13px;color:#23201A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-meta{display:flex;align-items:center;gap:9px;margin-top:6px;font-size:11px;color:#837C6E}
+.dot{width:5px;height:5px;border-radius:50%;flex:none;background:#21594A}
+.dot.a{background:#B4635F}
+.kind{font-size:9.5px;font-weight:600;color:#A67C3D;border:1px solid #DCCFB2;padding:1.5px 7px}
+.arrow{color:#C4B99F;flex:none}
+.r-empty{flex:1;display:flex;align-items:center;justify-content:center;color:#A39887;font-size:11.5px;border-top:1px solid #EFE7D4}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo serif">归</div><span class="sb-name serif">归因模块</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp caps">核心业务</div>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7.5" height="7.5"/><rect x="13.5" y="3" width="7.5" height="7.5"/><rect x="3" y="13.5" width="7.5" height="7.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5"/></svg>工作台</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp caps">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot">
+    <div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div>
+  </div>
+</aside>
+<div class="main">
+  <div class="hd">
+    <div>
+      <div class="hd-eyebrow caps">Overview · 2026 年 9 月 8 日</div>
+      <h1 class="serif">工作台</h1>
+      <p class="hd-sub">欢迎回来，这里是您的工作概览</p>
+    </div>
+    <div class="hd-right">
+      <a class="btn ghost">搜索</a>
+      <a class="btn primary">＋ 新建提问</a>
+      <div class="avatar">管</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>提问总数</div>
+      <div class="card-val serif">128<span class="unit">次</span></div>
+      <div class="delta">↑ 12 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</div>
+      <div class="card-val serif">24<span class="unit">份</span></div>
+      <div class="delta">↑ 3 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>研究任务</div>
+      <div class="card-val serif">16<span class="unit">项</span></div>
+      <div class="delta flat">— 持平</div>
+    </div>
+  </div>
+  <div class="quick">
+    <a class="qcard"><div class="qic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg></div><div><div class="qt">新建提问</div><div class="qd">用自然语言分析业务问题</div></div></a>
+    <a class="qcard"><div class="qic" style="color:#B4635F"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/></svg></div><div><div class="qt">洞察画布</div><div class="qd">报告 · 看板 · 日报统一画布编辑</div></div></a>
+    <a class="qcard"><div class="qic" style="color:#5B7290"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></div><div><div class="qt">深度研究</div><div class="qd">多智能体协同的深度分析</div></div></a>
+  </div>
+  <div class="cols">
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t serif">最近提问</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="r-meta"><span class="dot"></span>已完成<span style="margin-left:auto">2 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="r-meta"><span class="dot a"></span>分析中<span style="margin-left:auto">5 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="r-meta"><span class="dot"></span>已完成<span style="margin-left:auto">1 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 128 条提问记录 —</div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t serif">最近洞察</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">2026 Q3 增长复盘</div><div class="r-meta"><span class="kind">报告</span><span style="margin-left:auto">3 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">渠道效能日报</div><div class="r-meta"><span class="kind">日报</span><span style="margin-left:auto">昨天</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">投放归因看板</div><div class="r-meta"><span class="kind">看板</span><span style="margin-left:auto">3 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 24 份洞察文档 —</div>
+      </div>
+    </section>
+  </div>
+</div>
+</body></html>

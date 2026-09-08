@@ -48,12 +48,25 @@ export function ChartRenderer({ spec, height = 300 }: { spec: ChartSpec; height?
   const exportPng = useCallback(() => {
     const svg = containerRef.current?.querySelector("svg");
     if (!svg) return;
-    const serializer = new XMLSerializer();
-    const svgStr = serializer.serializeToString(svg);
-    const canvas = document.createElement("canvas");
     const rect = svg.getBoundingClientRect();
-    canvas.width = Math.max(rect.width, 600) * 2;
-    canvas.height = Math.max(rect.height, 300) * 2;
+    const width = Math.max(Math.round(rect.width), 600);
+    const height = Math.max(Math.round(rect.height), 300);
+    const scale = 2;
+
+    // ResponsiveContainer 输出的 svg 使用百分比宽高且无 viewBox，
+    // 直接序列化成图片时浏览器无法确定内在尺寸（会按默认视口裁剪），
+    // 导致导出的 PNG 只包含图表的一部分。克隆后固定像素尺寸与 viewBox 修复。
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(clone);
+    const canvas = document.createElement("canvas");
+    canvas.width = width * scale;
+    canvas.height = height * scale;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#fffefa";

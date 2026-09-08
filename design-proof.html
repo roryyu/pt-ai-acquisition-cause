@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>归因模块 · 设计方向确认 · 三版样张</title>
+<style>
+:root{
+  --bg:#F2F0EA;--surface:#fff;--ink:#252319;--ink-soft:#4C4738;--muted:#7B7360;
+  --hair:rgba(37,35,25,.14);--hair2:rgba(37,35,25,.26);--accent:#A8102F;--gold:#9C7A26;
+  --stage-w:1280px;--stage-h:880px;--stage-ar:1280/880;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#17160F;--surface:rgba(255,255,255,.055);--ink:#F0ECE0;--ink-soft:#D2CBB9;--muted:#968F7C;
+  --hair:rgba(255,255,255,.14);--hair2:rgba(255,255,255,.26);--accent:#EE8AA2;--gold:#D9AE59;}}
+:root[data-theme="dark"]{
+  --bg:#17160F;--surface:rgba(255,255,255,.055);--ink:#F0ECE0;--ink-soft:#D2CBB9;--muted:#968F7C;
+  --hair:rgba(255,255,255,.14);--hair2:rgba(255,255,255,.26);--accent:#EE8AA2;--gold:#D9AE59;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.shell{max-width:1760px;margin:0 auto;padding:0 clamp(16px,2.4vw,40px)}
+.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--hair);padding:26px 0 14px}
+.eyebrow{font-size:10.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin:0 0 8px}
+h1{font-size:clamp(18px,2vw,23px);line-height:1.45;margin:0 0 10px;font-weight:600;letter-spacing:0;text-wrap:balance}
+.axis{font-size:14px;line-height:1.8;color:var(--ink-soft);margin:0;max-width:88ch}
+.axis b{color:var(--ink)}
+.hint{font-size:12.5px;color:var(--muted);margin:14px 0 0;line-height:1.8;max-width:88ch}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.board{display:grid;grid-template-columns:74px repeat(3,minmax(0,1fr));gap:13px 18px;
+  align-items:start;padding:22px 0 8px}
+.board.solo{grid-template-columns:minmax(0,1fr);max-width:1280px}
+.board.solo>:not(.pick){display:none}
+.rowlab{font-size:11.5px;font-weight:600;letter-spacing:.1em;color:var(--muted);padding-top:3px;line-height:1.6}
+.vhead,.cell{min-width:0;margin:0}
+.cap{font-size:12.5px;color:var(--muted);margin:9px 0 0}
+.board:not(.solo) .cap{display:none}
+.meta{display:flex;align-items:baseline;gap:9px;padding-bottom:9px;border-bottom:1px solid var(--hair2)}
+.meta .num{font-size:17px;color:var(--gold);font-style:italic}
+.meta .name{font-weight:700;font-size:17px}
+.meta .tag{margin-left:auto;font-size:9.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.desc{font-size:12.5px;line-height:1.75;color:var(--muted);margin:9px 0 11px;min-height:4.4em}
+.frame{position:relative;aspect-ratio:var(--stage-ar);border:1px solid var(--hair2);border-radius:6px;overflow:hidden;
+  background:#fff;cursor:zoom-in;display:block;width:100%;padding:0;margin:0;font:inherit;text-align:left;color:inherit;
+  -webkit-appearance:none;appearance:none}
+.board.solo .frame{cursor:zoom-out}
+.frame::after{content:"点开放大";position:absolute;right:8px;bottom:8px;z-index:5;font-size:10px;letter-spacing:.1em;
+  padding:3px 9px;border-radius:999px;background:rgba(30,27,18,.62);color:#F6F1E4;opacity:0;transition:opacity .16s}
+.frame:hover::after{opacity:1}
+.board.solo .frame::after{content:"收起"}
+.stage{width:var(--stage-w);height:var(--stage-h);transform-origin:0 0;position:absolute;top:0;left:0}
+.stage>.screen{width:100%;height:100%;position:relative;overflow:hidden}
+.confirm{border-top:1px solid var(--hair);margin-top:34px;padding:34px 0 90px;max-width:800px}
+.confirm h2{font-size:19px;margin:0 0 6px}
+.confirm .sub{font-size:13.5px;color:var(--muted);margin:0 0 26px;line-height:1.8}
+.q{margin-bottom:24px}
+.q .ttl{font-size:14.5px;font-weight:600;margin:0 0 4px}
+.q .why{font-size:12.5px;color:var(--muted);margin:0 0 10px;line-height:1.8}
+.q select,.q .other{width:100%;font:inherit;font-size:14px;padding:11px 13px;border:1px solid var(--hair2);
+  border-radius:7px;background:var(--surface);color:var(--ink)}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opts label{display:inline-flex;align-items:center;gap:7px;padding:7px 14px 7px 11px;border:1px solid var(--hair2);
+  border-radius:999px;cursor:pointer;font-size:13.5px;line-height:1.45;background:var(--surface);user-select:none}
+.opts input{margin:0;accent-color:var(--ink);flex:none}
+.opts label:has(:checked){border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.other{display:none;margin-top:10px}
+.q:has([data-other]:checked) .other{display:block}
+.copy{font:inherit;font-size:14px;font-weight:600;padding:12px 28px;border:0;border-radius:999px;
+  background:var(--ink);color:var(--bg);cursor:pointer}
+.tip{font-size:13px;color:var(--muted);margin-left:12px}
+#fallback{white-space:pre-wrap;font-size:12.5px;background:var(--surface);border:1px solid var(--hair);
+  border-radius:7px;padding:14px;margin-top:14px;overflow-x:auto}
+@media(max-width:900px){.board{grid-template-columns:minmax(0,1fr)}.rowlab{display:none}
+  .desc{min-height:0}.board:not(.solo) .cap{display:block}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="top">
+  <p class="eyebrow">归因模块 · 设计方向确认 · 设计方向确认</p>
+  <h1>三版并列，请选一版，并说清另外两版哪里不要。</h1>
+  <p class="axis">三版沿同一条轴排开：<b>气质解读</b>。用户只给了一句话方向（高级感 · 商业产品 · 年营收百万美元），缺的是「高级」到底指什么——沿三条互斥的气质解读排开，让眼睛替你定义它。
+  三版只差在这一条轴上，文案完全相同，全部是真实文案。</p>
+  <p class="hint">九屏全在这一页上，不用切换：<b>横着看</b>三版在同一屏上的差别，<b>竖着看</b>一版从首屏到空状态撑不撑得住。
+  点任意一张放大到整宽读细节，再点一次收起。</p>
+</header>
+
+<div class="board" id="board">
+  <div class="rowlab"></div>
+  <div class="vhead">
+    <div class="meta"><span class="num">I</span><span class="name">贴着做</span><span class="tag">最字面解读</span></div>
+    <p class="desc">深色精密、克制节制的数据工作台——Stripe / Linear 一脉的「能卖一千万」长相。密度高但不吵，一切为可读性让路。</p>
+  </div>
+  <div class="vhead">
+    <div class="meta"><span class="num">II</span><span class="name">取其神</span><span class="tag">另一种味道</span></div>
+    <p class="desc">不靠深色，靠留白、衬线与暖纸色撑起的高级：静奢绿金，像高端咨询与金融机构的报告厅。信任感写在版式里。</p>
+  </div>
+  <div class="vhead">
+    <div class="meta"><span class="num">III</span><span class="name">反着来</span><span class="tag">故意反向</span></div>
+    <p class="desc">刻意反着来：大字号、高饱和、圆润造型的现代消费级工具感。高级不靠收敛，靠性格与工艺。</p>
+  </div>
+  <div class="rowlab">首屏 · 工作台</div>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「贴着做」的首屏 · 工作台"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#0C0C10;color:#F4F3F0;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+/* ── 侧边栏 ── */
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#0A0A0D;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:0 10px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:62px;padding:0 10px;border-bottom:1px solid rgba(255,255,255,.06);flex:none}
+.sb-logo{width:27px;height:27px;border-radius:7px;background:linear-gradient(135deg,#635BFF,#8B7CFF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff}
+.sb-name{font-weight:700;font-size:13.5px;letter-spacing:.02em}
+.sb-pro{font-size:8.5px;font-weight:700;letter-spacing:.14em;color:#8B8994;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:1px 5px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:14px}
+.sb-grp{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#6A6872;padding:0 10px;margin:16px 0 7px}
+.nav{display:flex;align-items:center;gap:10px;padding:8.5px 10px;border-radius:8px;font-size:13px;margin-bottom:2px;color:#8B8994;text-decoration:none}
+.nav:hover{background:rgba(255,255,255,.05)}
+.nav.on{background:rgba(255,255,255,.07);color:#F4F3F0;font-weight:600;box-shadow:inset 2.5px 0 #635BFF}
+.sb-foot{border-top:1px solid rgba(255,255,255,.06);padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:12px;color:#6A6872}
+/* ── 主区 ── */
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;padding:30px 36px 24px;background:radial-gradient(1100px 520px at 78% -12%,rgba(99,91,255,.10),transparent 62%),#0C0C10;overflow:hidden;display:flex;flex-direction:column}
+.hd{display:flex;align-items:flex-start;justify-content:space-between;flex:none}
+.hd-eyebrow{font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#8B8994}
+h1{font-size:27px;font-weight:700;letter-spacing:-.01em;line-height:1.2;margin-top:6px}
+.hd-sub{font-size:13px;color:#8B8994;margin-top:7px}
+.hd-right{display:flex;align-items:center;gap:14px;padding-top:6px}
+.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid transparent}
+.btn.primary{background:#635BFF;color:#fff}
+.btn.ghost{border-color:rgba(255,255,255,.14);color:#C7C5CE;background:rgba(255,255,255,.02)}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#2ECC9B,#635BFF);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+/* ── 统计卡 ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px;flex:none}
+.card{background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:11px;padding:18px 20px}
+.card-label{font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8B8994;display:flex;align-items:center;gap:8px}
+.card-label svg{opacity:.85}
+.card-val{font-size:32px;font-weight:700;letter-spacing:-.02em;margin-top:10px}
+.card-val .unit{font-size:15px;color:#8B8994;font-weight:500;margin-left:4px}
+.delta{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:5px;padding:2px 7px;margin-top:10px}
+.delta.up{color:#2ECC9B;background:rgba(46,204,155,.12)}
+.delta.flat{color:#8B8994;background:rgba(255,255,255,.06)}
+/* ── 快捷入口 ── */
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px;flex:none}
+.qcard{background:#111115;border:1px solid rgba(255,255,255,.085);border-radius:11px;padding:15px 16px;display:flex;gap:13px;align-items:center}
+.qic{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+.qt{font-size:13.5px;font-weight:600}
+.qd{font-size:11.5px;color:#8B8994;margin-top:3px}
+/* ── 双栏列表 ── */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;flex:1;min-height:0}
+.sec{display:flex;flex-direction:column;min-height:0}
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;flex:none}
+.sec-t{font-size:13.5px;font-weight:600}
+.sec-more{font-size:11.5px;color:#8B8994;text-decoration:none;display:flex;align-items:center;gap:4px}
+.list{background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:11px;overflow:hidden;flex:1;display:flex;flex-direction:column}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12.5px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+.row:last-child{border-bottom:0}
+.r-main{min-width:0}
+.r-t{font-size:13px;color:#F4F3F0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-meta{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:11px;color:#8B8994}
+.dot{width:6px;height:6px;border-radius:50%;flex:none}
+.dot.g{background:#2ECC9B}.dot.a{background:#F5B04C}
+.kind{font-size:10px;font-weight:600;letter-spacing:.02em;color:#A5A0FF;background:rgba(99,91,255,.15);border-radius:4px;padding:2px 7px}
+.arrow{color:#5D5B66;flex:none}
+.r-empty{flex:1;display:flex;align-items:center;justify-content:center;color:#6A6872;font-size:12.5px}
+</style></head><body>
+<!-- 侧边栏 -->
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-pro">PRO</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg>工作台</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot">
+    <div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div>
+  </div>
+</aside>
+<!-- 主区 -->
+<div class="main">
+  <div class="hd">
+    <div>
+      <div class="hd-eyebrow">Overview · 2026-09-08</div>
+      <h1>工作台</h1>
+      <p class="hd-sub">欢迎回来，这里是您的工作概览</p>
+    </div>
+    <div class="hd-right">
+      <a class="btn ghost"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>搜索</a>
+      <a class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>新建提问</a>
+      <div class="avatar">管</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="card">
+      <div class="card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A5A0FF" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>提问总数</div>
+      <div class="card-val">128<span class="unit">次</span></div>
+      <div class="delta up">▲ 12 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2ECC9B" stroke-width="1.8"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</div>
+      <div class="card-val">24<span class="unit">份</span></div>
+      <div class="delta up">▲ 3 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F5B04C" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>研究任务</div>
+      <div class="card-val">16<span class="unit">项</span></div>
+      <div class="delta flat">— 持平</div>
+    </div>
+  </div>
+  <div class="quick">
+    <a class="qcard"><div class="qic" style="background:rgba(99,91,255,.16);color:#A5A0FF"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14M5 12h14"/></svg></div><div><div class="qt">新建提问</div><div class="qd">用自然语言分析业务问题</div></div></a>
+    <a class="qcard"><div class="qic" style="background:rgba(46,204,155,.14);color:#2ECC9B"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/></svg></div><div><div class="qt">洞察画布</div><div class="qd">报告 · 看板 · 日报统一画布编辑</div></div></a>
+    <a class="qcard"><div class="qic" style="background:rgba(245,176,76,.14);color:#F5B04C"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></div><div><div class="qt">深度研究</div><div class="qd">多智能体协同的深度分析</div></div></a>
+  </div>
+  <div class="cols">
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t">最近提问</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="r-meta"><span class="dot g"></span>已完成<span style="margin-left:auto">2 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="r-meta"><span class="dot a"></span>分析中<span style="margin-left:auto">5 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="r-meta"><span class="dot g"></span>已完成<span style="margin-left:auto">1 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 128 条提问记录 —</div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t">最近洞察</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">2026 Q3 增长复盘</div><div class="r-meta"><span class="kind">报告</span><span style="margin-left:auto">3 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">渠道效能日报</div><div class="r-meta"><span class="kind">日报</span><span style="margin-left:auto">昨天</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">投放归因看板</div><div class="r-meta"><span class="kind">看板</span><span style="margin-left:auto">3 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 24 份洞察文档 —</div>
+      </div>
+    </section>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">I 贴着做 · 首屏 · 工作台</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「取其神」的首屏 · 工作台"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F4F0E6;color:#23201A;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.serif{font-family:'Playfair Display','Noto Serif SC','Songti SC','STSong',serif}
+.caps{letter-spacing:.16em;text-transform:uppercase}
+/* ── 侧边栏 ── */
+.sb{position:absolute;left:0;top:0;bottom:0;width:224px;background:#EDE7D8;border-right:1px solid #E0D7C2;display:flex;flex-direction:column;padding:0 14px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:11px;height:78px;border-bottom:1px solid #E0D7C2;flex:none}
+.sb-logo{width:30px;height:30px;background:#21594A;color:#F4F0E6;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.sb-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.sb-nav{flex:1;overflow:hidden;padding-top:16px}
+.sb-grp{font-size:9px;font-weight:600;color:#A67C3D;padding:0 10px;margin:20px 0 8px}
+.nav{display:flex;align-items:center;gap:11px;padding:9.5px 10px;border-radius:6px;font-size:13px;color:#837C6E;text-decoration:none}
+.nav:hover{color:#23201A}
+.nav.on{color:#21594A;font-weight:600;background:#FCFAF4;box-shadow:inset 2px 0 #A67C3D}
+.sb-foot{border-top:1px solid #E0D7C2;padding:12px 0 16px;flex:none}
+.foot-item{display:flex;align-items:center;gap:11px;padding:8px 10px;font-size:12px;color:#A39887}
+/* ── 主区 ── */
+.main{position:absolute;left:224px;top:0;right:0;bottom:0;padding:34px 44px 26px;background:#F4F0E6;overflow:hidden;display:flex;flex-direction:column}
+.hd{display:flex;align-items:flex-end;justify-content:space-between;flex:none;border-bottom:1px solid #E0D7C2;padding-bottom:22px}
+.hd-eyebrow{font-size:10px;font-weight:600;color:#A67C3D}
+h1{font-size:31px;font-weight:600;line-height:1.25;margin-top:8px}
+.hd-sub{font-size:13px;color:#837C6E;margin-top:7px}
+.hd-right{display:flex;align-items:center;gap:12px;padding-bottom:4px}
+.btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 18px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid transparent}
+.btn.primary{background:#21594A;color:#F7F3E9}
+.btn.ghost{border-color:#D6CBB2;color:#55504A;background:transparent}
+.avatar{width:34px;height:34px;border-radius:50%;background:#A67C3D;color:#F7F3E9;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+/* ── 统计卡 ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:24px;flex:none}
+.card{background:#FCFAF4;border:1px solid #E3DBC8;padding:20px 22px;position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#A67C3D}
+.card:nth-child(2)::before{background:#B4635F}
+.card:nth-child(3)::before{background:#5B7290}
+.card-label{font-size:10px;font-weight:600;color:#A67C3D;display:flex;align-items:center;gap:8px}
+.card-label svg{opacity:.9}
+.card-val{font-size:35px;font-weight:600;line-height:1.15;color:#21594A;margin-top:10px}
+.card-val .unit{font-size:14px;color:#A39887;font-weight:500;margin-left:5px}
+.delta{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;color:#21594A;border-top:1px solid #E3DBC8;margin-top:12px;padding-top:9px}
+.delta.flat{color:#837C6E}
+/* ── 快捷入口 ── */
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px;flex:none}
+.qcard{background:#FCFAF4;border:1px solid #E3DBC8;padding:17px 19px;display:flex;gap:14px;align-items:center}
+.qic{width:38px;height:38px;border:1px solid #D6CBB2;display:flex;align-items:center;justify-content:center;flex:none;color:#21594A;background:#F4F0E6}
+.qt{font-size:13.5px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.qd{font-size:11.5px;color:#837C6E;margin-top:3px}
+/* ── 双栏列表 ── */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;flex:1;min-height:0}
+.sec{display:flex;flex-direction:column;min-height:0}
+.sec-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;flex:none}
+.sec-t{font-size:14.5px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.sec-more{font-size:11px;color:#A67C3D;text-decoration:none;display:flex;align-items:center;gap:5px;font-weight:600}
+.list{background:#FCFAF4;border:1px solid #E3DBC8;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 18px;border-bottom:1px solid #EFE7D4}
+.row:last-child{border-bottom:0}
+.r-main{min-width:0}
+.r-t{font-size:13px;color:#23201A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-meta{display:flex;align-items:center;gap:9px;margin-top:6px;font-size:11px;color:#837C6E}
+.dot{width:5px;height:5px;border-radius:50%;flex:none;background:#21594A}
+.dot.a{background:#B4635F}
+.kind{font-size:9.5px;font-weight:600;color:#A67C3D;border:1px solid #DCCFB2;padding:1.5px 7px}
+.arrow{color:#C4B99F;flex:none}
+.r-empty{flex:1;display:flex;align-items:center;justify-content:center;color:#A39887;font-size:11.5px;border-top:1px solid #EFE7D4}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo serif">归</div><span class="sb-name serif">归因模块</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp caps">核心业务</div>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7.5" height="7.5"/><rect x="13.5" y="3" width="7.5" height="7.5"/><rect x="3" y="13.5" width="7.5" height="7.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5"/></svg>工作台</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp caps">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot">
+    <div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div>
+  </div>
+</aside>
+<div class="main">
+  <div class="hd">
+    <div>
+      <div class="hd-eyebrow caps">Overview · 2026 年 9 月 8 日</div>
+      <h1 class="serif">工作台</h1>
+      <p class="hd-sub">欢迎回来，这里是您的工作概览</p>
+    </div>
+    <div class="hd-right">
+      <a class="btn ghost">搜索</a>
+      <a class="btn primary">＋ 新建提问</a>
+      <div class="avatar">管</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>提问总数</div>
+      <div class="card-val serif">128<span class="unit">次</span></div>
+      <div class="delta">↑ 12 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</div>
+      <div class="card-val serif">24<span class="unit">份</span></div>
+      <div class="delta">↑ 3 较上周</div>
+    </div>
+    <div class="card">
+      <div class="card-label caps"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A67C3D" stroke-width="1.7"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>研究任务</div>
+      <div class="card-val serif">16<span class="unit">项</span></div>
+      <div class="delta flat">— 持平</div>
+    </div>
+  </div>
+  <div class="quick">
+    <a class="qcard"><div class="qic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg></div><div><div class="qt">新建提问</div><div class="qd">用自然语言分析业务问题</div></div></a>
+    <a class="qcard"><div class="qic" style="color:#B4635F"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/></svg></div><div><div class="qt">洞察画布</div><div class="qd">报告 · 看板 · 日报统一画布编辑</div></div></a>
+    <a class="qcard"><div class="qic" style="color:#5B7290"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></div><div><div class="qt">深度研究</div><div class="qd">多智能体协同的深度分析</div></div></a>
+  </div>
+  <div class="cols">
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t serif">最近提问</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="r-meta"><span class="dot"></span>已完成<span style="margin-left:auto">2 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="r-meta"><span class="dot a"></span>分析中<span style="margin-left:auto">5 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="r-meta"><span class="dot"></span>已完成<span style="margin-left:auto">1 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 128 条提问记录 —</div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t serif">最近洞察</span><a class="sec-more">查看全部<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">2026 Q3 增长复盘</div><div class="r-meta"><span class="kind">报告</span><span style="margin-left:auto">3 小时前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">渠道效能日报</div><div class="r-meta"><span class="kind">日报</span><span style="margin-left:auto">昨天</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">投放归因看板</div><div class="r-meta"><span class="kind">看板</span><span style="margin-left:auto">3 天前</span></div></div><svg class="arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 24 份洞察文档 —</div>
+      </div>
+    </section>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">II 取其神 · 首屏 · 工作台</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「反着来」的首屏 · 工作台"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F6F4EF;color:#16161C;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.num{font-family:'Space Grotesk',ui-monospace,monospace}
+/* ── 侧边栏 ── */
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#FFFFFF;border-right:1px solid #ECE9E2;display:flex;flex-direction:column;padding:0 12px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:68px;padding:0 6px;flex:none}
+.sb-logo{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.sb-name{font-weight:800;font-size:14.5px;letter-spacing:.01em}
+.sb-badge{font-size:8.5px;font-weight:800;letter-spacing:.1em;color:#FF5C1F;background:#FFEDE4;border-radius:20px;padding:2px 8px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:12px}
+.sb-grp{font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#B7B3AA;padding:0 10px;margin:18px 0 8px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:13.5px;font-weight:600;color:#6F6C76;text-decoration:none;margin-bottom:3px}
+.nav.on{background:#16161C;color:#fff}
+.sb-foot{border-top:1px solid #ECE9E2;padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:12.5px;color:#B7B3AA;font-weight:500}
+/* ── 主区 ── */
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;padding:32px 40px 24px;overflow:hidden;display:flex;flex-direction:column}
+.hd{display:flex;align-items:flex-start;justify-content:space-between;flex:none}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#FF5C1F}
+.eyebrow i{width:22px;height:3px;border-radius:2px;background:linear-gradient(90deg,#FF5C1F,#F2B705)}
+h1{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.15;margin-top:8px}
+.hd-sub{font-size:13.5px;color:#6F6C76;margin-top:6px}
+.hd-right{display:flex;align-items:center;gap:12px;padding-top:4px}
+.btn{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 20px;border-radius:999px;font-size:13.5px;font-weight:700;text-decoration:none;border:0}
+.btn.primary{background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;box-shadow:0 8px 22px rgba(255,92,31,.32)}
+.btn.ghost{background:#fff;color:#16161C;border:1.5px solid #E4E0D6}
+.avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#FF5C1F);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff}
+/* ── 统计卡 ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px;flex:none}
+.card{background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;padding:20px 22px;position:relative;overflow:hidden}
+.card::after{content:"";position:absolute;right:-26px;top:-26px;width:84px;height:84px;border-radius:50%;opacity:.5}
+.card.c1::after{background:radial-gradient(circle,#FFE3D4,transparent 70%)}
+.card.c2::after{background:radial-gradient(circle,#E7DAFF,transparent 70%)}
+.card.c3::after{background:radial-gradient(circle,#D6F3EC,transparent 70%)}
+.card-label{font-size:11px;font-weight:700;letter-spacing:.06em;color:#6F6C76;display:flex;align-items:center;gap:8px}
+.ic{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff}
+.card-val{font-size:36px;font-weight:800;letter-spacing:-.02em;margin-top:10px}
+.card-val .unit{font-size:14px;color:#6F6C76;font-weight:600;margin-left:4px}
+.delta{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 10px;margin-top:12px}
+.delta.up{color:#FF5C1F;background:#FFEDE4}
+.delta.flat{color:#6F6C76;background:#F2F0EA}
+/* ── 快捷入口 ── */
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px;flex:none}
+.qcard{background:#fff;border:1.5px solid #ECE9E2;border-radius:18px;padding:16px 18px;display:flex;gap:14px;align-items:center}
+.qic{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.qt{font-size:14px;font-weight:800}
+.qd{font-size:11.5px;color:#6F6C76;margin-top:3px}
+/* ── 双栏列表 ── */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;flex:1;min-height:0}
+.sec{display:flex;flex-direction:column;min-height:0}
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex:none}
+.sec-t{font-size:15px;font-weight:800}
+.sec-more{font-size:12px;font-weight:700;color:#FF5C1F;text-decoration:none;display:flex;align-items:center;gap:4px}
+.list{background:#fff;border:1.5px solid #ECE9E2;border-radius:18px;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 18px;border-bottom:1px solid #F2F0EA}
+.row:last-child{border-bottom:0}
+.r-main{min-width:0}
+.r-t{font-size:13px;font-weight:600;color:#16161C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-meta{display:flex;align-items:center;gap:9px;margin-top:6px;font-size:11px;color:#6F6C76}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.g{background:#0FA48B}.dot.a{background:#F2B705}
+.kind{font-size:10px;font-weight:800;border-radius:999px;padding:2.5px 9px}
+.kind.r{color:#FF5C1F;background:#FFEDE4}
+.kind.d{color:#7C3AED;background:#F1E9FF}
+.kind.b{color:#0FA48B;background:#DFF4EE}
+.arrow{color:#C9C5BB;flex:none}
+.r-empty{flex:1;display:flex;align-items:center;justify-content:center;color:#B7B3AA;font-size:12px;font-weight:600;border-top:1px solid #F2F0EA}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-badge">BETA</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>工作台</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot">
+    <div class="foot-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div>
+  </div>
+</aside>
+<div class="main">
+  <div class="hd">
+    <div>
+      <div class="eyebrow"><i></i>Overview · 今天</div>
+      <h1>工作台</h1>
+      <p class="hd-sub">欢迎回来，这里是您的工作概览</p>
+    </div>
+    <div class="hd-right">
+      <a class="btn ghost">搜索</a>
+      <a class="btn primary">＋ 新建提问</a>
+      <div class="avatar">管</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="card c1">
+      <div class="card-label"><span class="ic" style="background:linear-gradient(135deg,#FF5C1F,#FF8A5C)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg></span>提问总数</div>
+      <div class="card-val num">128<span class="unit">次</span></div>
+      <div class="delta up">▲ 12 较上周</div>
+    </div>
+    <div class="card c2">
+      <div class="card-label"><span class="ic" style="background:linear-gradient(135deg,#7C3AED,#9D6BFF)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg></span>洞察画布</div>
+      <div class="card-val num">24<span class="unit">份</span></div>
+      <div class="delta up" style="color:#7C3AED;background:#F1E9FF">▲ 3 较上周</div>
+    </div>
+    <div class="card c3">
+      <div class="card-label"><span class="ic" style="background:linear-gradient(135deg,#0FA48B,#2EC4A6)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></span>研究任务</div>
+      <div class="card-val num">16<span class="unit">项</span></div>
+      <div class="delta flat">— 持平</div>
+    </div>
+  </div>
+  <div class="quick">
+    <a class="qcard"><div class="qic" style="background:linear-gradient(135deg,#FF5C1F,#FF8A5C)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></div><div><div class="qt">新建提问</div><div class="qd">用自然语言分析业务问题</div></div></a>
+    <a class="qcard"><div class="qic" style="background:linear-gradient(135deg,#7C3AED,#9D6BFF)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/></svg></div><div><div class="qt">洞察画布</div><div class="qd">报告 · 看板 · 日报统一画布编辑</div></div></a>
+    <a class="qcard"><div class="qic" style="background:linear-gradient(135deg,#0FA48B,#2EC4A6)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></div><div><div class="qt">深度研究</div><div class="qd">多智能体协同的深度分析</div></div></a>
+  </div>
+  <div class="cols">
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t">最近提问</span><a class="sec-more">查看全部<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="r-meta"><span class="dot g"></span>已完成<span style="margin-left:auto">2 小时前</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="r-meta"><span class="dot a"></span>分析中<span style="margin-left:auto">5 小时前</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="r-meta"><span class="dot g"></span>已完成<span style="margin-left:auto">1 天前</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 128 条提问记录 —</div>
+      </div>
+    </section>
+    <section class="sec">
+      <div class="sec-hd"><span class="sec-t">最近洞察</span><a class="sec-more">查看全部<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+      <div class="list">
+        <a class="row"><div class="r-main"><div class="r-t">2026 Q3 增长复盘</div><div class="r-meta"><span class="kind r">报告</span><span style="margin-left:auto">3 小时前</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">渠道效能日报</div><div class="r-meta"><span class="kind b">日报</span><span style="margin-left:auto">昨天</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a class="row"><div class="r-main"><div class="r-t">投放归因看板</div><div class="r-meta"><span class="kind d">看板</span><span style="margin-left:auto">3 天前</span></div></div><svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <div class="r-empty">— 共 24 份洞察文档 —</div>
+      </div>
+    </section>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">III 反着来 · 首屏 · 工作台</figcaption>
+  </figure>
+  <div class="rowlab">核心操作 · 任务问答</div>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「贴着做」的核心操作 · 任务问答"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#0C0C10;color:#F4F3F0;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#0A0A0D;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:0 10px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:62px;padding:0 10px;border-bottom:1px solid rgba(255,255,255,.06);flex:none}
+.sb-logo{width:27px;height:27px;border-radius:7px;background:linear-gradient(135deg,#635BFF,#8B7CFF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff}
+.sb-name{font-weight:700;font-size:13.5px;letter-spacing:.02em}
+.sb-pro{font-size:8.5px;font-weight:700;letter-spacing:.14em;color:#8B8994;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:1px 5px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:14px}
+.sb-grp{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#6A6872;padding:0 10px;margin:16px 0 7px}
+.nav{display:flex;align-items:center;gap:10px;padding:8.5px 10px;border-radius:8px;font-size:13px;margin-bottom:2px;color:#8B8994;text-decoration:none}
+.nav.on{background:rgba(255,255,255,.07);color:#F4F3F0;font-weight:600;box-shadow:inset 2.5px 0 #635BFF}
+.sb-foot{border-top:1px solid rgba(255,255,255,.06);padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:12px;color:#6A6872}
+/* ── 主区 ── */
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:radial-gradient(1100px 520px at 78% -12%,rgba(99,91,255,.10),transparent 62%),#0C0C10;overflow:hidden;display:flex;gap:18px;padding:22px 24px 0}
+/* 左：历史 */
+.hist{width:264px;flex:none;background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:11px;display:flex;flex-direction:column;margin-bottom:22px;overflow:hidden}
+.hist-hd{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.hist-cnt{font-size:10.5px;color:#8B8994;background:rgba(255,255,255,.07);border-radius:10px;padding:1px 7px}
+.hist-item{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+.hist-item.on{background:rgba(99,91,255,.09);box-shadow:inset 2.5px 0 #635BFF}
+.h-t{font-size:12.5px;line-height:1.55;color:#F4F3F0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-meta{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:10.5px;color:#8B8994}
+.rb{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:600;border-radius:4px;padding:1.5px 6px}
+.rb.da{color:#5CD6A6;background:rgba(46,204,155,.13)}
+.rb.rs{color:#F5B04C;background:rgba(245,176,76,.13)}
+.rb.dr{color:#A5A0FF;background:rgba(99,91,255,.15)}
+/* 右：对话 */
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:22px;background:#111115;border:1px solid rgba(255,255,255,.085);border-radius:11px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;padding:16px 26px 0;display:flex;flex-direction:column;gap:12px}
+.bubble{align-self:flex-end;max-width:78%;background:linear-gradient(135deg,#635BFF,#7B6CFF);border-radius:12px 12px 3px 12px;padding:11px 15px;font-size:13px;line-height:1.6}
+.tl{border:1px solid rgba(255,255,255,.085);border-radius:10px;background:#141419}
+.tl-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.tl-t{font-size:11px;font-weight:600;letter-spacing:.06em;color:#8B8994;display:flex;align-items:center;gap:7px}
+.tl-collapse{font-size:11px;color:#A5A0FF;display:flex;align-items:center;gap:4px}
+.steps{display:flex;align-items:center;gap:0;padding:9px 16px}
+.step{display:flex;align-items:center;gap:7px;font-size:11px;color:#8B8994}
+.step b{color:#C7C5CE;font-weight:600}
+.step .sd{width:15px;height:15px;border-radius:50%;background:#1C1C23;border:1.5px solid #3A3A45;display:flex;align-items:center;justify-content:center;flex:none}
+.step.done .sd{border-color:#635BFF;background:rgba(99,91,255,.2)}
+.step.done .sd svg{stroke:#A5A0FF}
+.step.ok .sd{border-color:#2ECC9B;background:rgba(46,204,155,.16)}
+.step.ok .sd svg{stroke:#2ECC9B}
+.sep{width:26px;height:1px;background:rgba(255,255,255,.14);flex:none}
+/* 图表卡 */
+.chart{background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:10px;padding:13px 15px 10px}
+.chart-hd{display:flex;align-items:center;justify-content:space-between}
+.chart-t{font-size:12.5px;font-weight:600}
+.legend{display:flex;gap:12px;font-size:10px;color:#8B8994}
+.lg{display:flex;align-items:center;gap:5px}
+.lg i{width:8px;height:8px;border-radius:2px;display:block}
+/* 答案 */
+.ans{border:1px solid rgba(255,255,255,.085);border-radius:10px;background:#141419;padding:15px 17px}
+.ans-hd{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#8B8994;margin-bottom:9px}
+.ans p{font-size:12.5px;line-height:1.75;color:#D7D5DE}
+.ans .hl{color:#A5A0FF;font-weight:600}
+.ans ul{list-style:none;margin-top:8px}
+.ans li{font-size:12px;line-height:1.7;color:#B9B7C2;padding-left:14px;position:relative;margin-top:3px}
+.ans li::before{content:"";position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:#635BFF}
+.cite{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#8B8994;flex-wrap:wrap}
+.cite span{border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:5px;color:#B9B7C2}
+.done-row{display:flex;align-items:center;gap:10px;font-size:11px;color:#8B8994}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:4px 11px;font-size:11px;color:#A5A0FF;text-decoration:none}
+.pill.on{background:rgba(99,91,255,.15);border-color:rgba(99,91,255,.5)}
+/* 输入区 */
+.input{border-top:1px solid rgba(255,255,255,.07);padding:12px 16px 11px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#0E0E13;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px}
+.inbox:focus-within{border-color:#635BFF}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#F4F3F0;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#6A6872}
+.send{width:34px;height:34px;border-radius:8px;background:#635BFF;border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#6A6872;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-pro">PRO</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd">问答历史<span class="hist-cnt">128</span></div>
+    <div class="hist-item on"><div class="h-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">12 分钟前</span></div></div>
+    <div class="hist-item"><div class="h-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="h-meta"><span class="rb rs">深度研究</span><span style="color:#F5B04C">分析中</span><span style="margin-left:auto">5 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="h-meta"><span class="rb dr">直接回答</span><span>已完成</span><span style="margin-left:auto">2 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">昨天</span></div></div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="bubble">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div>
+      <div class="tl">
+        <div class="tl-hd"><span class="tl-t">AGENT 推理过程 · 实时</span><span class="tl-collapse">收起过程<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg></span></div>
+        <div class="steps">
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Supervisor</b>&nbsp;意图路由</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>DataAnalyst</b>&nbsp;NL2SQL</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>执行查询</b>&nbsp;3 条 SQL</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Synthesizer</b>&nbsp;综合</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Critic</b>&nbsp;质检 8.5</div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="chart-hd"><span class="chart-t">2026 年各渠道花费与 ROI 对比</span><span class="legend"><span class="lg"><i style="background:#635BFF"></i>花费（万元）</span><span class="lg"><i style="background:#2ECC9B"></i>ROI</span></span></div>
+        <svg width="100%" height="156" viewBox="0 0 700 172">
+          <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+            <line x1="40" y1="28" x2="690" y2="28"/><line x1="40" y1="76" x2="690" y2="76"/><line x1="40" y1="124" x2="690" y2="124"/>
+          </g>
+          <text x="40" y="20" fill="#6A6872" font-size="9.5">0</text><text x="40" y="68" fill="#6A6872" font-size="9.5">50</text><text x="40" y="116" fill="#6A6872" font-size="9.5">100</text>
+          <g font-size="10" fill="#8B8994" text-anchor="middle">
+            <text x="150" y="168">Meta</text><text x="350" y="168">X</text><text x="550" y="168">TikTok</text>
+          </g>
+          <g>
+            <rect x="95" y="66" width="110" height="58" rx="3" fill="rgba(99,91,255,.85)"/>
+            <rect x="295" y="44" width="110" height="80" rx="3" fill="rgba(99,91,255,.75)"/>
+            <rect x="495" y="30" width="110" height="94" rx="3" fill="rgba(99,91,255,.9)"/>
+            <rect x="95" y="14" width="110" height="8" rx="2" fill="#2ECC9B"/>
+            <rect x="295" y="20" width="110" height="8" rx="2" fill="#2ECC9B"/>
+            <rect x="495" y="10" width="110" height="8" rx="2" fill="#2ECC9B"/>
+          </g>
+          <g font-family="'JetBrains Mono',monospace" font-size="10" fill="#C7C5CE" text-anchor="middle">
+            <text x="150" y="54">2.6</text><text x="350" y="36">3.1</text><text x="550" y="22">4.2</text>
+          </g>
+        </svg>
+      </div>
+      <div class="ans">
+        <div class="ans-hd">综合结论</div>
+        <p>综合 2026 年 1 月至今的数据，<span class="hl">TikTok 以 4.2 的 ROI 领先</span>，其次 X（3.1）与 Meta（2.6）。下载侧 TikTok 贡献 46%，X 承接端 FD/RD 转化率最高。</p>
+        <ul><li>按 ROI 排序，预算建议向 TikTok 倾斜 20%</li><li>Meta 花费最高但 ROI 垫底，需下钻分市场定位损耗</li><li>完整明细已生成 3 条 SQL 查询，可加入画布继续编辑</li></ul>
+      </div>
+      <div class="cite">引用来源：<span>Adjust 花费报表</span><span>TikTok 广告面板</span><span>X 投放后台</span></div>
+      <div class="done-row">完成 · 耗时 <span class="mono">12.6s</span><span style="margin-left:auto"><a class="pill">加入画布</a><a class="pill on">进行深入研究</a></span></div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="继续追问...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">I 贴着做 · 核心操作 · 任务问答</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「取其神」的核心操作 · 任务问答"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F4F0E6;color:#23201A;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.serif{font-family:'Playfair Display','Noto Serif SC','Songti SC','STSong',serif}
+.caps{letter-spacing:.16em;text-transform:uppercase}
+.sb{position:absolute;left:0;top:0;bottom:0;width:224px;background:#EDE7D8;border-right:1px solid #E0D7C2;display:flex;flex-direction:column;padding:0 14px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:11px;height:78px;border-bottom:1px solid #E0D7C2;flex:none}
+.sb-logo{width:30px;height:30px;background:#21594A;color:#F4F0E6;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.sb-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.sb-nav{flex:1;overflow:hidden;padding-top:16px}
+.sb-grp{font-size:9px;font-weight:600;color:#A67C3D;padding:0 10px;margin:20px 0 8px}
+.nav{display:flex;align-items:center;gap:11px;padding:9.5px 10px;border-radius:6px;font-size:13px;color:#837C6E;text-decoration:none}
+.nav.on{color:#21594A;font-weight:600;background:#FCFAF4;box-shadow:inset 2px 0 #A67C3D}
+.sb-foot{border-top:1px solid #E0D7C2;padding:12px 0 16px;flex:none}
+.foot-item{display:flex;align-items:center;gap:11px;padding:8px 10px;font-size:12px;color:#A39887}
+.main{position:absolute;left:224px;top:0;right:0;bottom:0;background:#F4F0E6;overflow:hidden;display:flex;gap:20px;padding:24px 28px 0}
+.hist{width:272px;flex:none;background:#FCFAF4;border:1px solid #E3DBC8;display:flex;flex-direction:column;margin-bottom:24px;overflow:hidden}
+.hist-hd{padding:15px 18px;border-bottom:1px solid #E3DBC8;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.hist-cnt{font-size:10px;color:#A67C3D;border:1px solid #DCCFB2;border-radius:12px;padding:1px 8px;font-weight:600}
+.hist-item{padding:13px 18px;border-bottom:1px solid #F0E8D6}
+.hist-item.on{background:#F7F3E9;box-shadow:inset 2.5px 0 #A67C3D}
+.h-t{font-size:12.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-meta{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:10.5px;color:#837C6E}
+.rb{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:600;padding:1.5px 7px;border:1px solid transparent}
+.rb.da{color:#21594A;border-color:#C9D9CE;background:#F0F5F0}
+.rb.rs{color:#B4635F;border-color:#E4CBC3;background:#FAF2EF}
+.rb.dr{color:#5B7290;border-color:#CBD6E0;background:#F1F4F7}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:24px;background:#FCFAF4;border:1px solid #E3DBC8;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;padding:19px 30px 0;display:flex;flex-direction:column;gap:13px}
+.bubble{align-self:flex-end;max-width:76%;background:#21594A;color:#F7F3E9;border-radius:14px 14px 3px 14px;padding:11px 16px;font-size:13px;line-height:1.65}
+.tl{border:1px solid #E3DBC8;background:#F7F3E9}
+.tl-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 15px;border-bottom:1px solid #E8DFC9}
+.tl-t{font-size:10px;font-weight:600;color:#A67C3D}
+.tl-collapse{font-size:11px;color:#21594A;font-weight:600;display:flex;align-items:center;gap:4px}
+.steps{display:flex;align-items:center;gap:0;padding:9px 17px}
+.step{display:flex;align-items:center;gap:8px;font-size:11px;color:#837C6E}
+.step b{color:#23201A;font-weight:600}
+.step .sd{width:16px;height:16px;border-radius:50%;border:1px solid #CFC4A8;display:flex;align-items:center;justify-content:center;flex:none;background:#FCFAF4}
+.step.done .sd{border-color:#21594A;background:#21594A}
+.step.done .sd svg{stroke:#F7F3E9}
+.step.ok .sd{border-color:#A67C3D;background:#A67C3D}
+.step.ok .sd svg{stroke:#F7F3E9}
+.sep{width:30px;height:1px;background:#D8CDB2;flex:none}
+.chart{background:#FCFAF4;border:1px solid #E3DBC8;padding:14px 16px 10px}
+.chart-hd{display:flex;align-items:center;justify-content:space-between}
+.chart-t{font-size:13px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.legend{display:flex;gap:13px;font-size:10px;color:#837C6E}
+.lg{display:flex;align-items:center;gap:5px}
+.lg i{width:14px;height:3px;display:block}
+.ans{border:1px solid #E3DBC8;background:#FCFAF4;padding:16px 18px}
+.ans-hd{font-size:9.5px;font-weight:600;color:#A67C3D;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid #EFE7D4}
+.ans p{font-size:12.5px;line-height:1.8;color:#3A362E}
+.ans .hl{color:#21594A;font-weight:600}
+.ans ul{list-style:none;margin-top:8px}
+.ans li{font-size:12px;line-height:1.75;color:#55504A;padding-left:15px;position:relative;margin-top:3px}
+.ans li::before{content:"—";position:absolute;left:0;top:0;color:#A67C3D}
+.cite{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#837C6E;flex-wrap:wrap}
+.cite span{border:1px solid #DCCFB2;border-radius:2px;padding:3px 9px;font-size:10px;color:#55504A}
+.done-row{display:flex;align-items:center;gap:10px;font-size:11px;color:#837C6E}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid #DCCFB2;padding:4px 12px;font-size:11px;color:#21594A;font-weight:600;text-decoration:none}
+.pill.on{background:#21594A;border-color:#21594A;color:#F7F3E9}
+.input{border-top:1px solid #E3DBC8;padding:13px 17px 12px;flex:none;background:#F7F3E9}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FCFAF4;border:1px solid #D6CBB2;padding:9px 10px}
+.inbox:focus-within{border-color:#21594A}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#23201A;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#A39887}
+.send{width:34px;height:34px;background:#21594A;border:0;color:#F7F3E9;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#A39887;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo serif">归</div><span class="sb-name serif">归因模块</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp caps">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7.5" height="7.5"/><rect x="13.5" y="3" width="7.5" height="7.5"/><rect x="3" y="13.5" width="7.5" height="7.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp caps">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t serif">问答历史</span><span class="hist-cnt">128</span></div>
+    <div class="hist-item on"><div class="h-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">12 分钟前</span></div></div>
+    <div class="hist-item"><div class="h-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="h-meta"><span class="rb rs">深度研究</span><span style="color:#B4635F">分析中</span><span style="margin-left:auto">5 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="h-meta"><span class="rb dr">直接回答</span><span>已完成</span><span style="margin-left:auto">2 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">昨天</span></div></div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="bubble">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div>
+      <div class="tl">
+        <div class="tl-hd"><span class="tl-t caps">Agent 推理过程 · 实时</span><span class="tl-collapse">收起过程<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 15-6-6-6 6"/></svg></span></div>
+        <div class="steps">
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Supervisor</b>&nbsp;意图路由</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>DataAnalyst</b>&nbsp;NL2SQL</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>执行查询</b>&nbsp;3 条 SQL</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Synthesizer</b>&nbsp;综合</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span><b>Critic</b>&nbsp;质检 8.5</div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="chart-hd"><span class="chart-t serif">2026 年各渠道花费与 ROI 对比</span><span class="legend"><span class="lg"><i style="background:#21594A"></i>花费（万元）</span><span class="lg"><i style="background:#A67C3D"></i>ROI</span></span></div>
+        <svg width="100%" height="152" viewBox="0 0 700 168">
+          <g stroke="#EDE4CD" stroke-width="1">
+            <line x1="40" y1="26" x2="690" y2="26"/><line x1="40" y1="72" x2="690" y2="72"/><line x1="40" y1="118" x2="690" y2="118"/>
+          </g>
+          <text x="40" y="20" fill="#A39887" font-size="9.5">0</text><text x="40" y="66" fill="#A39887" font-size="9.5">50</text><text x="40" y="112" fill="#A39887" font-size="9.5">100</text>
+          <g font-size="10" fill="#837C6E" text-anchor="middle">
+            <text x="150" y="164">Meta</text><text x="350" y="164">X</text><text x="550" y="164">TikTok</text>
+          </g>
+          <g>
+            <rect x="95" y="62" width="110" height="56" rx="1" fill="#21594A"/>
+            <rect x="295" y="42" width="110" height="76" rx="1" fill="#21594A"/>
+            <rect x="495" y="28" width="110" height="90" rx="1" fill="#21594A"/>
+            <rect x="95" y="14" width="110" height="6" fill="#A67C3D"/>
+            <rect x="295" y="20" width="110" height="6" fill="#A67C3D"/>
+            <rect x="495" y="10" width="110" height="6" fill="#A67C3D"/>
+          </g>
+          <g font-size="10.5" fill="#23201A" text-anchor="middle" font-family="'Playfair Display',serif">
+            <text x="150" y="52">2.6</text><text x="350" y="34">3.1</text><text x="550" y="22">4.2</text>
+          </g>
+        </svg>
+      </div>
+      <div class="ans">
+        <div class="ans-hd caps">综合结论</div>
+        <p>综合 2026 年 1 月至今的数据，<span class="hl">TikTok 以 4.2 的 ROI 领先</span>，其次 X（3.1）与 Meta（2.6）。下载侧 TikTok 贡献 46%，X 承接端 FD/RD 转化率最高。</p>
+        <ul><li>按 ROI 排序，预算建议向 TikTok 倾斜 20%</li><li>Meta 花费最高但 ROI 垫底，需下钻分市场定位损耗</li><li>完整明细已生成 3 条 SQL 查询，可加入画布继续编辑</li></ul>
+      </div>
+      <div class="cite">引用来源：<span>Adjust 花费报表</span><span>TikTok 广告面板</span><span>X 投放后台</span></div>
+      <div class="done-row">完成 · 耗时 <span>12.6s</span><span style="margin-left:auto"><a class="pill">加入画布</a><a class="pill on">进行深入研究</a></span></div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="继续追问...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">II 取其神 · 核心操作 · 任务问答</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「反着来」的核心操作 · 任务问答"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F6F4EF;color:#16161C;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.num{font-family:'Space Grotesk',ui-monospace,monospace}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#FFFFFF;border-right:1px solid #ECE9E2;display:flex;flex-direction:column;padding:0 12px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:68px;padding:0 6px;flex:none}
+.sb-logo{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.sb-name{font-weight:800;font-size:14.5px;letter-spacing:.01em}
+.sb-badge{font-size:8.5px;font-weight:800;letter-spacing:.1em;color:#FF5C1F;background:#FFEDE4;border-radius:20px;padding:2px 8px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:12px}
+.sb-grp{font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#B7B3AA;padding:0 10px;margin:18px 0 8px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:13.5px;font-weight:600;color:#6F6C76;text-decoration:none;margin-bottom:3px}
+.nav.on{background:#16161C;color:#fff}
+.sb-foot{border-top:1px solid #ECE9E2;padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:12.5px;color:#B7B3AA;font-weight:500}
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:#F6F4EF;overflow:hidden;display:flex;gap:16px;padding:20px 24px 0}
+.hist{width:268px;flex:none;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;display:flex;flex-direction:column;margin-bottom:20px;overflow:hidden}
+.hist-hd{padding:15px 17px;border-bottom:1.5px solid #F2F0EA;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14.5px;font-weight:800}
+.hist-cnt{font-size:10.5px;font-weight:800;color:#FF5C1F;background:#FFEDE4;border-radius:999px;padding:2px 10px}
+.hist-item{padding:13px 17px;border-bottom:1.5px solid #F2F0EA}
+.hist-item.on{background:#FFF7F2;box-shadow:inset 3px 0 #FF5C1F}
+.h-t{font-size:12.5px;font-weight:600;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-meta{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:10.5px;color:#6F6C76}
+.rb{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;border-radius:999px;padding:2px 8px}
+.rb.da{color:#0FA48B;background:#DFF4EE}
+.rb.rs{color:#F2B705;background:#FCF3D4}
+.rb.dr{color:#7C3AED;background:#F1E9FF}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:20px;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;padding:22px 26px 0;display:flex;flex-direction:column;gap:14px}
+.bubble{align-self:flex-end;max-width:76%;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;border-radius:18px 18px 4px 18px;padding:11px 16px;font-size:13px;font-weight:500;line-height:1.6;box-shadow:0 6px 18px rgba(255,92,31,.25)}
+.tl{border:1.5px solid #ECE9E2;border-radius:16px;background:#FAF9F5}
+.tl-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1.5px solid #F2F0EA}
+.tl-t{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#FF5C1F;display:flex;align-items:center;gap:6px}
+.tl-t i{width:7px;height:7px;border-radius:50%;background:#0FA48B;box-shadow:0 0 0 3px #DFF4EE}
+.tl-collapse{font-size:11px;font-weight:700;color:#16161C;display:flex;align-items:center;gap:4px}
+.steps{display:flex;align-items:center;gap:0;padding:13px 16px}
+.step{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:#6F6C76}
+.step b{color:#16161C;font-weight:800}
+.step .sd{width:17px;height:17px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none;background:#F2F0EA}
+.step.done .sd{background:linear-gradient(135deg,#FF5C1F,#FF8A5C)}
+.step.done .sd svg{stroke:#fff}
+.step.ok .sd{background:linear-gradient(135deg,#0FA48B,#2EC4A6)}
+.step.ok .sd svg{stroke:#fff}
+.sep{width:26px;height:2.5px;border-radius:2px;background:repeating-linear-gradient(90deg,#E4E0D6 0 5px,transparent 5px 9px);flex:none}
+.chart{background:#fff;border:1.5px solid #ECE9E2;border-radius:16px;padding:14px 16px 10px}
+.chart-hd{display:flex;align-items:center;justify-content:space-between}
+.chart-t{font-size:13.5px;font-weight:800}
+.legend{display:flex;gap:13px;font-size:10px;font-weight:600;color:#6F6C76}
+.lg{display:flex;align-items:center;gap:5px}
+.lg i{width:10px;height:10px;border-radius:3px;display:block}
+.ans{border:1.5px solid #ECE9E2;border-radius:16px;background:#FAF9F5;padding:15px 17px}
+.ans-hd{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7C3AED;margin-bottom:8px}
+.ans p{font-size:12.5px;line-height:1.75;color:#3A3942}
+.ans .hl{color:#FF5C1F;font-weight:800}
+.ans ul{list-style:none;margin-top:8px}
+.ans li{font-size:12px;font-weight:500;line-height:1.7;color:#56545F;padding-left:16px;position:relative;margin-top:3px}
+.ans li::before{content:"";position:absolute;left:1px;top:8px;width:7px;height:7px;border-radius:2px;background:linear-gradient(135deg,#FF5C1F,#7C3AED)}
+.cite{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#6F6C76;flex-wrap:wrap}
+.cite span{background:#F2F0EA;border-radius:999px;padding:3px 10px;font-size:10px;font-weight:700;color:#56545F}
+.done-row{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;color:#6F6C76}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #E4E0D6;border-radius:999px;padding:4.5px 13px;font-size:11px;font-weight:800;color:#7C3AED;text-decoration:none}
+.pill.on{background:linear-gradient(135deg,#7C3AED,#9D6BFF);border-color:transparent;color:#fff}
+.input{border-top:1.5px solid #F2F0EA;padding:13px 16px 12px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FAF9F5;border:1.5px solid #E4E0D6;border-radius:16px;padding:9px 10px}
+.inbox:focus-within{border-color:#FF5C1F}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#16161C;font-family:inherit;font-size:12.5px;font-weight:500;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#B7B3AA}
+.send{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#B7B3AA;margin-top:7px;padding-left:2px;font-weight:500}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-badge">BETA</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>工作台</a>
+    <a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t">问答历史</span><span class="hist-cnt">128</span></div>
+    <div class="hist-item on"><div class="h-t">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">12 分钟前</span></div></div>
+    <div class="hist-item"><div class="h-t">TikTok的CPI为什么从6月开始明显上涨？</div><div class="h-meta"><span class="rb rs">深度研究</span><span style="color:#C9930B">分析中</span><span style="margin-left:auto">5 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">X渠道最近效果为什么持续变差？按月份和市场下钻找原因</div><div class="h-meta"><span class="rb dr">直接回答</span><span>已完成</span><span style="margin-left:auto">2 小时前</span></div></div>
+    <div class="hist-item"><div class="h-t">app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</div><div class="h-meta"><span class="rb da">数据分析</span><span>已完成</span><span style="margin-left:auto">昨天</span></div></div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="bubble">对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</div>
+      <div class="tl">
+        <div class="tl-hd"><span class="tl-t"><i></i>Agent 推理过程 · 实时</span><span class="tl-collapse">收起过程<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m18 15-6-6-6 6"/></svg></span></div>
+        <div class="steps">
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Supervisor</b>&nbsp;意图路由</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>DataAnalyst</b>&nbsp;NL2SQL</div>
+          <div class="sep"></div>
+          <div class="step done"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>执行查询</b>&nbsp;3 条 SQL</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Synthesizer</b>&nbsp;综合</div>
+          <div class="sep"></div>
+          <div class="step ok"><span class="sd"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6 9 17l-5-5"/></svg></span><b>Critic</b>&nbsp;质检 8.5</div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="chart-hd"><span class="chart-t">2026 年各渠道花费与 ROI 对比</span><span class="legend"><span class="lg"><i style="background:#FF5C1F"></i>花费（万元）</span><span class="lg"><i style="background:#7C3AED"></i>ROI</span></span></div>
+        <svg width="100%" height="166" viewBox="0 0 700 166">
+          <g stroke="#F2F0EA" stroke-width="1.5">
+            <line x1="40" y1="24" x2="690" y2="24"/><line x1="40" y1="70" x2="690" y2="70"/><line x1="40" y1="116" x2="690" y2="116"/>
+          </g>
+          <text x="40" y="18" fill="#B7B3AA" font-size="9.5" font-weight="700">0</text><text x="40" y="64" fill="#B7B3AA" font-size="9.5" font-weight="700">50</text><text x="40" y="110" fill="#B7B3AA" font-size="9.5" font-weight="700">100</text>
+          <g font-size="11" fill="#6F6C76" text-anchor="middle" font-weight="700">
+            <text x="150" y="162">Meta</text><text x="350" y="162">X</text><text x="550" y="162">TikTok</text>
+          </g>
+          <g>
+            <rect x="95" y="60" width="110" height="56" rx="6" fill="#FF5C1F"/>
+            <rect x="295" y="40" width="110" height="76" rx="6" fill="#FF5C1F"/>
+            <rect x="495" y="26" width="110" height="90" rx="6" fill="#FF5C1F"/>
+            <rect x="95" y="14" width="110" height="8" rx="3" fill="#7C3AED"/>
+            <rect x="295" y="20" width="110" height="8" rx="3" fill="#7C3AED"/>
+            <rect x="495" y="10" width="110" height="8" rx="3" fill="#7C3AED"/>
+          </g>
+          <g font-family="'Space Grotesk',monospace" font-size="11" fill="#16161C" text-anchor="middle" font-weight="700">
+            <text x="150" y="52">2.6</text><text x="350" y="34">3.1</text><text x="550" y="22">4.2</text>
+          </g>
+        </svg>
+      </div>
+      <div class="ans">
+        <div class="ans-hd">综合结论</div>
+        <p>综合 2026 年 1 月至今的数据，<span class="hl">TikTok 以 4.2 的 ROI 领先</span>，其次 X（3.1）与 Meta（2.6）。下载侧 TikTok 贡献 46%，X 承接端 FD/RD 转化率最高。</p>
+        <ul><li>按 ROI 排序，预算建议向 TikTok 倾斜 20%</li><li>Meta 花费最高但 ROI 垫底，需下钻分市场定位损耗</li><li>完整明细已生成 3 条 SQL 查询，可加入画布继续编辑</li></ul>
+      </div>
+      <div class="cite">引用来源：<span>Adjust 花费报表</span><span>TikTok 广告面板</span><span>X 投放后台</span></div>
+      <div class="done-row">完成 · 耗时 <span class="num">12.6s</span><span style="margin-left:auto"><a class="pill">加入画布</a><a class="pill on">进行深入研究</a></span></div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="继续追问...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">III 反着来 · 核心操作 · 任务问答</figcaption>
+  </figure>
+  <div class="rowlab">空状态 · 问答空态</div>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「贴着做」的空状态 · 问答空态"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#0C0C10;color:#F4F3F0;-webkit-font-smoothing:antialiased}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#0A0A0D;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:0 10px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:62px;padding:0 10px;border-bottom:1px solid rgba(255,255,255,.06);flex:none}
+.sb-logo{width:27px;height:27px;border-radius:7px;background:linear-gradient(135deg,#635BFF,#8B7CFF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff}
+.sb-name{font-weight:700;font-size:13.5px;letter-spacing:.02em}
+.sb-pro{font-size:8.5px;font-weight:700;letter-spacing:.14em;color:#8B8994;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:1px 5px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:14px}
+.sb-grp{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#6A6872;padding:0 10px;margin:16px 0 7px}
+.nav{display:flex;align-items:center;gap:10px;padding:8.5px 10px;border-radius:8px;font-size:13px;margin-bottom:2px;color:#8B8994;text-decoration:none}
+.nav.on{background:rgba(255,255,255,.07);color:#F4F3F0;font-weight:600;box-shadow:inset 2.5px 0 #635BFF}
+.sb-foot{border-top:1px solid rgba(255,255,255,.06);padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:12px;color:#6A6872}
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:radial-gradient(1100px 520px at 78% -12%,rgba(99,91,255,.10),transparent 62%),#0C0C10;overflow:hidden;display:flex;gap:18px;padding:22px 24px 0}
+.hist{width:264px;flex:none;background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:11px;display:flex;flex-direction:column;margin-bottom:22px;overflow:hidden}
+.hist-hd{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.hist-cnt{font-size:10.5px;color:#8B8994;background:rgba(255,255,255,.07);border-radius:10px;padding:1px 7px}
+.hist-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#6A6872}
+.hist-empty svg{opacity:.5}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:22px;background:#111115;border:1px solid rgba(255,255,255,.085);border-radius:11px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 40px;gap:0}
+.orb{width:62px;height:62px;border-radius:18px;background:linear-gradient(135deg,rgba(99,91,255,.28),rgba(139,124,255,.12));border:1px solid rgba(99,91,255,.4);display:flex;align-items:center;justify-content:center;color:#A5A0FF}
+h2{font-size:19px;font-weight:700;letter-spacing:-.01em;margin-top:18px}
+.desc{font-size:12.5px;line-height:1.8;color:#8B8994;text-align:center;max-width:520px;margin-top:8px}
+.samples{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:560px}
+.sq{display:flex;align-items:center;gap:11px;background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:9px;padding:10px 14px;font-size:12.5px;color:#C7C5CE;text-align:left}
+.sq svg{color:#635BFF;flex:none}
+.sq .sqc{flex:none}
+.sq span{flex:1;line-height:1.5}
+.input{border-top:1px solid rgba(255,255,255,.07);padding:12px 16px 11px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#0E0E13;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px}
+.inbox:focus-within{border-color:#635BFF}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#F4F3F0;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#6A6872}
+.send{width:34px;height:34px;border-radius:8px;background:#635BFF;border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#6A6872;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-pro">PRO</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd">问答历史<span class="hist-cnt">0</span></div>
+    <div class="hist-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>
+      <span style="font-size:11.5px">暂无问答记录</span>
+    </div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="orb"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+      <h2>任务问答</h2>
+      <p class="desc">自然语言提问，AI 智能体将自主完成意图路由、数据查询（NL2SQL）、联网深度研究与可视化图表生成</p>
+      <div class="samples">
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span>对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>X渠道最近效果为什么持续变差？按月份和市场下钻找原因</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>TikTok的CPI为什么从6月开始明显上涨？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><rect x="5" y="5" width="14" height="14" rx="3"/></svg><span>app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z"/></svg><span>2026年TikTok广告竞价成本上涨的原因及应对策略？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+      </div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="输入您的业务问题...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">I 贴着做 · 空状态 · 问答空态</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「取其神」的空状态 · 问答空态"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F4F0E6;color:#23201A;-webkit-font-smoothing:antialiased}
+.serif{font-family:'Playfair Display','Noto Serif SC','Songti SC','STSong',serif}
+.caps{letter-spacing:.16em;text-transform:uppercase}
+.sb{position:absolute;left:0;top:0;bottom:0;width:224px;background:#EDE7D8;border-right:1px solid #E0D7C2;display:flex;flex-direction:column;padding:0 14px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:11px;height:78px;border-bottom:1px solid #E0D7C2;flex:none}
+.sb-logo{width:30px;height:30px;background:#21594A;color:#F4F0E6;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.sb-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.sb-nav{flex:1;overflow:hidden;padding-top:16px}
+.sb-grp{font-size:9px;font-weight:600;color:#A67C3D;padding:0 10px;margin:20px 0 8px}
+.nav{display:flex;align-items:center;gap:11px;padding:9.5px 10px;border-radius:6px;font-size:13px;color:#837C6E;text-decoration:none}
+.nav.on{color:#21594A;font-weight:600;background:#FCFAF4;box-shadow:inset 2px 0 #A67C3D}
+.sb-foot{border-top:1px solid #E0D7C2;padding:12px 0 16px;flex:none}
+.foot-item{display:flex;align-items:center;gap:11px;padding:8px 10px;font-size:12px;color:#A39887}
+.main{position:absolute;left:224px;top:0;right:0;bottom:0;background:#F4F0E6;overflow:hidden;display:flex;gap:20px;padding:24px 28px 0}
+.hist{width:272px;flex:none;background:#FCFAF4;border:1px solid #E3DBC8;display:flex;flex-direction:column;margin-bottom:24px;overflow:hidden}
+.hist-hd{padding:15px 18px;border-bottom:1px solid #E3DBC8;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif}
+.hist-cnt{font-size:10px;color:#A67C3D;border:1px solid #DCCFB2;border-radius:12px;padding:1px 8px;font-weight:600}
+.hist-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;color:#A39887}
+.hist-empty svg{opacity:.65}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:24px;background:#FCFAF4;border:1px solid #E3DBC8;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 44px;gap:0}
+.orb{width:60px;height:60px;border:1px solid #DCCFB2;background:#F7F3E9;display:flex;align-items:center;justify-content:center;color:#A67C3D}
+h2{font-size:21px;font-weight:600;font-family:'Playfair Display','Noto Serif SC','Songti SC',serif;margin-top:18px;letter-spacing:.02em}
+.desc{font-size:12.5px;line-height:1.85;color:#837C6E;text-align:center;max-width:540px;margin-top:9px}
+.samples{display:flex;flex-direction:column;gap:9px;margin-top:24px;width:100%;max-width:600px}
+.sq{display:flex;align-items:center;gap:12px;background:#F7F3E9;border:1px solid #E3DBC8;padding:10.5px 15px;font-size:12.5px;color:#3A362E;text-align:left}
+.sq:hover{border-color:#DCCFB2}
+.sq svg{color:#21594A;flex:none}
+.sq span{flex:1;line-height:1.55}
+.sq .arr{color:#C4B99F}
+.input{border-top:1px solid #E3DBC8;padding:13px 17px 12px;flex:none;background:#F7F3E9}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FCFAF4;border:1px solid #D6CBB2;padding:9px 10px}
+.inbox:focus-within{border-color:#21594A}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#23201A;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#A39887}
+.send{width:34px;height:34px;background:#21594A;border:0;color:#F7F3E9;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#A39887;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo serif">归</div><span class="sb-name serif">归因模块</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp caps">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7.5" height="7.5"/><rect x="13.5" y="3" width="7.5" height="7.5"/><rect x="3" y="13.5" width="7.5" height="7.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp caps">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t serif">问答历史</span><span class="hist-cnt">0</span></div>
+    <div class="hist-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>
+      <span style="font-size:11.5px">暂无问答记录</span>
+    </div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="orb"><svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+      <h2 class="serif">任务问答</h2>
+      <p class="desc">自然语言提问，AI 智能体将自主完成意图路由、数据查询（NL2SQL）、联网深度研究与可视化图表生成</p>
+      <div class="samples">
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span>对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>X渠道最近效果为什么持续变差？按月份和市场下钻找原因</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>TikTok的CPI为什么从6月开始明显上涨？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><rect x="5" y="5" width="14" height="14" rx="2"/></svg><span>app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z"/></svg><span>2026年TikTok广告竞价成本上涨的原因及应对策略？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+      </div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="输入您的业务问题...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">II 取其神 · 空状态 · 问答空态</figcaption>
+  </figure>
+  <figure class="cell">
+    <button class="frame" type="button" aria-label="放大「反着来」的空状态 · 问答空态"><div class="stage"><div class="screen"><!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#F6F4EF;color:#16161C;-webkit-font-smoothing:antialiased}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#FFFFFF;border-right:1px solid #ECE9E2;display:flex;flex-direction:column;padding:0 12px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:68px;padding:0 6px;flex:none}
+.sb-logo{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.sb-name{font-weight:800;font-size:14.5px;letter-spacing:.01em}
+.sb-badge{font-size:8.5px;font-weight:800;letter-spacing:.1em;color:#FF5C1F;background:#FFEDE4;border-radius:20px;padding:2px 8px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:12px}
+.sb-grp{font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#B7B3AA;padding:0 10px;margin:18px 0 8px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:13.5px;font-weight:600;color:#6F6C76;text-decoration:none;margin-bottom:3px}
+.nav.on{background:#16161C;color:#fff}
+.sb-foot{border-top:1px solid #ECE9E2;padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;font-size:12.5px;color:#B7B3AA;font-weight:500}
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:#F6F4EF;overflow:hidden;display:flex;gap:16px;padding:20px 24px 0}
+.hist{width:268px;flex:none;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;display:flex;flex-direction:column;margin-bottom:20px;overflow:hidden}
+.hist-hd{padding:15px 17px;border-bottom:1.5px solid #F2F0EA;display:flex;align-items:center;justify-content:space-between}
+.hist-t{font-size:14.5px;font-weight:800}
+.hist-cnt{font-size:10.5px;font-weight:800;color:#FF5C1F;background:#FFEDE4;border-radius:999px;padding:2px 10px}
+.hist-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;color:#B7B3AA}
+.hist-empty svg{opacity:.8}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:20px;background:#fff;border:1.5px solid #ECE9E2;border-radius:20px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 44px;gap:0}
+.orb{width:66px;height:66px;border-radius:22px;background:linear-gradient(135deg,#FF5C1F,#7C3AED);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 12px 30px rgba(255,92,31,.3)}
+h2{font-size:24px;font-weight:800;letter-spacing:-.01em;margin-top:18px}
+.desc{font-size:13px;line-height:1.8;color:#6F6C76;text-align:center;max-width:560px;margin-top:8px}
+.samples{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:620px}
+.sq{display:flex;align-items:center;gap:12px;background:#FAF9F5;border:1.5px solid #E9E6DF;border-radius:16px;padding:11px 15px;font-size:12.5px;font-weight:600;color:#3A3942;text-align:left}
+.sq:hover{border-color:#FF5C1F;background:#FFF7F2}
+.sq svg{color:#FF5C1F;flex:none}
+.sq span{flex:1;line-height:1.5}
+.sq .arr{color:#C9C5BB}
+.input{border-top:1.5px solid #F2F0EA;padding:13px 16px 12px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#FAF9F5;border:1.5px solid #E4E0D6;border-radius:16px;padding:9px 10px}
+.inbox:focus-within{border-color:#FF5C1F}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#16161C;font-family:inherit;font-size:12.5px;font-weight:500;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#B7B3AA}
+.send{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#FF5C1F,#FF8A5C);border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#B7B3AA;margin-top:7px;padding-left:2px;font-weight:500}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-badge">BETA</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>工作台</a>
+    <a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd"><span class="hist-t">问答历史</span><span class="hist-cnt">0</span></div>
+    <div class="hist-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>
+      <span style="font-size:11.5px;font-weight:600">暂无问答记录</span>
+    </div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="orb"><svg width="29" height="29" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+      <h2>任务问答</h2>
+      <p class="desc">自然语言提问，AI 智能体将自主完成意图路由、数据查询（NL2SQL）、联网深度研究与可视化图表生成</p>
+      <div class="samples">
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span>对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>X渠道最近效果为什么持续变差？按月份和市场下钻找原因</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>TikTok的CPI为什么从6月开始明显上涨？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><rect x="5" y="5" width="14" height="14" rx="3"/></svg><span>app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z"/></svg><span>2026年TikTok广告竞价成本上涨的原因及应对策略？</span><svg class="arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+      </div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="输入您的业务问题...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>
+</div></div></button>
+    <figcaption class="cap">III 反着来 · 空状态 · 问答空态</figcaption>
+  </figure>
+</div>
+
+<section class="confirm">
+  <h2>三个问题</h2>
+  <p class="sub">每问三条，对不上的写在「其他」。确认页只有三版，没有「现在」。</p>
+  <div class="q">
+    <p class="ttl" id="pick-ttl">1 · 选哪个？</p>
+    <select id="pick" aria-labelledby="pick-ttl">
+      <option value="">— 请选择 —</option>
+      <option>贴着做（最字面解读）</option>
+      <option>取其神（另一种味道）</option>
+      <option>反着来（故意反向）</option>
+      <option>三个都不要</option>
+    </select>
+  </div>
+  <div class="q">
+    <p class="ttl" id="reject-ttl">2 · 另外两个，哪里不要？</p>
+    <p class="why">三选，可多选。具体的那句骂写在「其他」，并点名是哪一版。</p>
+    <div class="opts" role="group" aria-labelledby="reject-ttl">
+      <label><input type="checkbox" name="reject" value="太满太挤，或装饰抢戏"><span>太满太挤，或装饰抢戏</span></label><label><input type="checkbox" name="reject" value="太空太素，一屏里没什么可抓的"><span>太空太素，一屏里没什么可抓的</span></label><label><input type="checkbox" name="reject" value="气质不对（太嫩 / 太商务 / 太炫）"><span>气质不对（太嫩 / 太商务 / 太炫）</span></label>
+      <label><input type="checkbox" name="reject" data-other value="其他"><span>其他</span></label>
+    </div>
+    <input class="other" id="reject-other" type="text" autocomplete="off"
+      placeholder="例：「取其神」圆角太软，看着像儿童产品">
+  </div>
+  <div class="q">
+    <p class="ttl" id="context-ttl">3 · 你的用户，在什么状态下打开这个产品？</p>
+    <p class="why">三选，可多选。更具体的现场写在「其他」。</p>
+    <div class="opts" role="group" aria-labelledby="context-ttl">
+      <label><input type="checkbox" name="context" value="手机上，经常单手"><span>手机上，经常单手</span></label><label><input type="checkbox" name="context" value="电脑前，或投在大屏上"><span>电脑前，或投在大屏上</span></label><label><input type="checkbox" name="context" value="赶时间，扫一眼就得懂"><span>赶时间，扫一眼就得懂</span></label>
+      <label><input type="checkbox" name="context" data-other value="其他"><span>其他</span></label>
+    </div>
+    <input class="other" id="context-other" type="text" autocomplete="off"
+      placeholder="例：闭门会现场，二三十人扫码进来，写的人在别人讲话时单手打字">
+  </div>
+  <button class="copy" id="copyBtn" type="button">复制我的选择</button><span class="tip" id="tip"></span>
+  <pre id="fallback" hidden></pre>
+</section>
+</div>
+<script>
+(function(){
+  var stages=[].slice.call(document.querySelectorAll('.stage')), board=document.getElementById('board');
+  function fit(){stages.forEach(function(st){var w=st.parentElement.clientWidth;
+    if(w)st.style.transform='scale('+(w/1280)+')';});}
+  window.addEventListener('resize',fit);
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
+  fit();
+  var cells=[].slice.call(document.querySelectorAll('.cell'));
+  cells.forEach(function(c){c.querySelector('.frame').addEventListener('click',function(){
+    var was=c.classList.contains('pick');
+    cells.forEach(function(x){x.classList.remove('pick');});
+    board.classList.toggle('solo',!was);
+    if(!was)c.classList.add('pick');
+    fit();
+    if(!was)c.scrollIntoView({block:'nearest'});
+  });});
+  function gather(name){
+    var parts=[], extra=(document.getElementById(name+'-other').value||'').trim();
+    [].slice.call(document.querySelectorAll('input[name="'+name+'"]:checked')).forEach(function(el){
+      if(!el.hasAttribute('data-other')) parts.push(el.value);
+    });
+    if(extra) parts.push(extra);
+    return parts.join('；')||'（空）';
+  }
+  function wireOther(name){
+    var box=document.querySelector('input[name="'+name+'"][data-other]');
+    var inp=document.getElementById(name+'-other');
+    if(!box||!inp) return;
+    box.addEventListener('change',function(){ if(box.checked) inp.focus(); });
+    inp.addEventListener('input',function(){ if(inp.value.trim()) box.checked=true; });
+  }
+  wireOther('reject'); wireOther('context');
+  document.getElementById('copyBtn').addEventListener('click',function(){
+    var t='【列宾 · 设计方向确认】\n'
+      +'1 选择：'+(document.getElementById('pick').value||'（未选）')+'\n'
+      +'2 否决理由（原话）：'+gather('reject')+'\n'
+      +'3 使用场景：'+gather('context');
+    var tip=document.getElementById('tip'),fb=document.getElementById('fallback');
+    function manual(){tip.textContent='复制失败，请手动选中下面这段：';fb.textContent=t;fb.hidden=false;}
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(t).then(function(){tip.textContent='已复制，贴回对话里即可';fb.hidden=true;},manual);
+    else manual();
+  });
+})();
+</script>
+</body>
+</html>

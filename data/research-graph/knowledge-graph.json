@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-04T04:50:19.674Z",
+  "updatedAt": "2026-09-07T06:03:29.884Z",
   "nodes": [
     {
       "id": "node_13d37aaf-7229-4c9d-ab47-2cd6e126e87b",
@@ -66,11 +66,12 @@
       "id": "node_ef271bdd-d5d2-40d8-98d2-cf62da7c902d",
       "label": "Adjust",
       "type": "entity",
-      "summary": "Adjust installs被用于核对渠道表downloads口径，并可评估作为临时分析主口径。",
+      "summary": "研究指出需优先排查Adjust数据接入链路，补全成本、点击、展示、注册、转化等指标；Adjust Fraud Prevention被提及为潜在第三方校验但无详细说明。",
       "reportIds": [
-        "question_86cf2e8f-5aa2-43b5-8520-da799136912a"
+        "question_86cf2e8f-5aa2-43b5-8520-da799136912a",
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
       ],
-      "updatedAt": "2026-09-04T04:50:19.674Z"
+      "updatedAt": "2026-09-07T06:03:29.884Z"
     },
     {
       "id": "node_b16b31f5-f2ea-4d6a-aea7-ea0a0af95291",
@@ -111,6 +112,86 @@
         "question_86cf2e8f-5aa2-43b5-8520-da799136912a"
       ],
       "updatedAt": "2026-09-04T04:50:19.674Z"
+    },
+    {
+      "id": "node_1a09b67d-95f9-4694-9506-191e8874ffa0",
+      "label": "X渠道",
+      "type": "entity",
+      "summary": "作为效果差待优化的投放渠道，本研究中所有外部证据均无法支撑其优化方案[1]-[42]。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_4ab08e46-0e64-4fb1-a907-a23155105795",
+      "label": "CPI",
+      "type": "entity",
+      "summary": "核心指标，研究指出外部检索无法提供其行业基准，渠道效果差缺乏对标依据[13]-[18]。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_1fe0dc94-7d06-48ad-b9d5-ebaa28eeffd3",
+      "label": "ROAS",
+      "type": "entity",
+      "summary": "核心指标，外部基准缺失，材料未提供止损线参考，历史研究同样指出其行业基准不可得[16]。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_aa103e0a-cd7a-4eb8-b7aa-cbd83883f31a",
+      "label": "FD率",
+      "type": "entity",
+      "summary": "核心指标，历史研究曾指出渠道日表中FD类指标返回0行，外部基准同样缺失[16]。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_ea955cfd-8c4a-4077-bfb0-d61b8ec443d3",
+      "label": "广告渠道效果优化",
+      "type": "topic",
+      "summary": "研究目标所属主题，覆盖归因诊断、渠道特性优化、出价/受众/素材/预算调整与试验决策，但本次外部证据全部缺失。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_99e3b0b1-ebd8-4ef5-b6d5-bb8916188eca",
+      "label": "归因数据治理",
+      "type": "topic",
+      "summary": "材料确认在渠道优化前必须优先完成的内外数据治理任务，包括排查Adjust接入链路、补全成本/点击/转化指标、建立行业基准库。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "label": "外部证据缺口",
+      "type": "topic",
+      "summary": "五个子问题检索均无有效专业证据，现有材料仅为汉字释义、行业分类、广告定义等无关内容，构成高置信度证据缺口。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+      "label": "针对某广告渠道投放效果不佳，从归因诊断、渠道特性优化、指标基准、流量质量校验与试验决策五个维度形成可落地的外部优化方案与决策框架。",
+      "type": "report",
+      "summary": "本研究围绕“X渠道效果差如何优化”从归因诊断、渠道调整、指标基准、流量校验、试验决策五维检索，42条材料零条有效证据，高置信度；结合2026-09-04历史结论，确认数据治理是唯一前置任务，30天数据成本/点击/转化缺失。",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ],
+      "updatedAt": "2026-09-07T06:03:29.884Z"
     }
   ],
   "edges": [
@@ -201,6 +282,78 @@
       "reportIds": [
         "question_86cf2e8f-5aa2-43b5-8520-da799136912a"
       ]
+    },
+    {
+      "source": "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+      "target": "node_ea955cfd-8c4a-4077-bfb0-d61b8ec443d3",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+      "target": "node_99e3b0b1-ebd8-4ef5-b6d5-bb8916188eca",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+      "target": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_ea955cfd-8c4a-4077-bfb0-d61b8ec443d3",
+      "target": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "relation": "受制于",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_99e3b0b1-ebd8-4ef5-b6d5-bb8916188eca",
+      "target": "node_1a09b67d-95f9-4694-9506-191e8874ffa0",
+      "relation": "是唯一可执行前置任务",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_1a09b67d-95f9-4694-9506-191e8874ffa0",
+      "target": "node_ef271bdd-d5d2-40d8-98d2-cf62da7c902d",
+      "relation": "需优先排查数据接入链路",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "target": "node_4ab08e46-0e64-4fb1-a907-a23155105795",
+      "relation": "导致无行业基准",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "target": "node_1fe0dc94-7d06-48ad-b9d5-ebaa28eeffd3",
+      "relation": "导致无行业基准",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
+    },
+    {
+      "source": "node_f98e3184-72ab-4af3-90bc-22ef33f5ca58",
+      "target": "node_aa103e0a-cd7a-4eb8-b7aa-cbd83883f31a",
+      "relation": "导致无行业基准",
+      "reportIds": [
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+      ]
     }
   ],
   "reports": [
@@ -210,6 +363,13 @@
       "objective": "建立面向流量投放归因平台的 FD 类指标分析框架，明确正常基准、异常判定方法与渠道优化方向。",
       "summary": "2026-09-02渠道日表下载量、FD、RD、金额、花费均返回0行，公开证据无法提供FD类指标统一口径、正常基准与异常判定，应先做数据治理。",
       "createdAt": "2026-09-04T04:50:19.674Z"
+    },
+    {
+      "questionId": "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+      "question": "现在X渠道效果比较差，怎么优化？",
+      "objective": "针对某广告渠道投放效果不佳，从归因诊断、渠道特性优化、指标基准、流量质量校验与试验决策五个维度形成可落地的外部优化方案与决策框架。",
+      "summary": "本研究围绕“X渠道效果差如何优化”从归因诊断、渠道调整、指标基准、流量校验、试验决策五维检索，42条材料零条有效证据，高置信度；结合2026-09-04历史结论，确认数据治理是唯一前置任务，30天数据成本/点击/转化缺失。",
+      "createdAt": "2026-09-07T06:03:29.883Z"
     }
   ]
 }

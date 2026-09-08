@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:880px;overflow:hidden;font-family:'Inter','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#0C0C10;color:#F4F3F0;-webkit-font-smoothing:antialiased}
+.sb{position:absolute;left:0;top:0;bottom:0;width:216px;background:#0A0A0D;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:0 10px;z-index:5}
+.sb-brand{display:flex;align-items:center;gap:10px;height:62px;padding:0 10px;border-bottom:1px solid rgba(255,255,255,.06);flex:none}
+.sb-logo{width:27px;height:27px;border-radius:7px;background:linear-gradient(135deg,#635BFF,#8B7CFF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff}
+.sb-name{font-weight:700;font-size:13.5px;letter-spacing:.02em}
+.sb-pro{font-size:8.5px;font-weight:700;letter-spacing:.14em;color:#8B8994;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:1px 5px;margin-left:auto}
+.sb-nav{flex:1;overflow:hidden;padding-top:14px}
+.sb-grp{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#6A6872;padding:0 10px;margin:16px 0 7px}
+.nav{display:flex;align-items:center;gap:10px;padding:8.5px 10px;border-radius:8px;font-size:13px;margin-bottom:2px;color:#8B8994;text-decoration:none}
+.nav.on{background:rgba(255,255,255,.07);color:#F4F3F0;font-weight:600;box-shadow:inset 2.5px 0 #635BFF}
+.sb-foot{border-top:1px solid rgba(255,255,255,.06);padding:10px 0 14px;flex:none}
+.foot-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:12px;color:#6A6872}
+.main{position:absolute;left:216px;top:0;right:0;bottom:0;background:radial-gradient(1100px 520px at 78% -12%,rgba(99,91,255,.10),transparent 62%),#0C0C10;overflow:hidden;display:flex;gap:18px;padding:22px 24px 0}
+.hist{width:264px;flex:none;background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:11px;display:flex;flex-direction:column;margin-bottom:22px;overflow:hidden}
+.hist-hd{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.hist-cnt{font-size:10.5px;color:#8B8994;background:rgba(255,255,255,.07);border-radius:10px;padding:1px 7px}
+.hist-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#6A6872}
+.hist-empty svg{opacity:.5}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;margin-bottom:22px;background:#111115;border:1px solid rgba(255,255,255,.085);border-radius:11px;overflow:hidden}
+.chat-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 40px;gap:0}
+.orb{width:62px;height:62px;border-radius:18px;background:linear-gradient(135deg,rgba(99,91,255,.28),rgba(139,124,255,.12));border:1px solid rgba(99,91,255,.4);display:flex;align-items:center;justify-content:center;color:#A5A0FF}
+h2{font-size:19px;font-weight:700;letter-spacing:-.01em;margin-top:18px}
+.desc{font-size:12.5px;line-height:1.8;color:#8B8994;text-align:center;max-width:520px;margin-top:8px}
+.samples{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:100%;max-width:560px}
+.sq{display:flex;align-items:center;gap:11px;background:#141419;border:1px solid rgba(255,255,255,.085);border-radius:9px;padding:10px 14px;font-size:12.5px;color:#C7C5CE;text-align:left}
+.sq svg{color:#635BFF;flex:none}
+.sq .sqc{flex:none}
+.sq span{flex:1;line-height:1.5}
+.input{border-top:1px solid rgba(255,255,255,.07);padding:12px 16px 11px;flex:none}
+.inbox{display:flex;align-items:flex-end;gap:10px;background:#0E0E13;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px}
+.inbox:focus-within{border-color:#635BFF}
+.inbox textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:#F4F3F0;font-family:inherit;font-size:12.5px;line-height:1.5;height:34px;padding-top:8px}
+.inbox textarea::placeholder{color:#6A6872}
+.send{width:34px;height:34px;border-radius:8px;background:#635BFF;border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.foot-note{font-size:10.5px;color:#6A6872;margin-top:7px;padding-left:2px}
+</style></head><body>
+<aside class="sb">
+  <div class="sb-brand"><div class="sb-logo">归</div><span class="sb-name">归因模块</span><span class="sb-pro">PRO</span></div>
+  <nav class="sb-nav">
+    <div class="sb-grp">核心业务</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg>工作台</a>
+    <a class="nav on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>任务问答</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>深度研究</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><circle cx="11" cy="11" r="2"/></svg>洞察画布</a>
+    <div class="sb-grp">数据与算子</div>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>数据源管理</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8l-6-4.6h7.6Z"/></svg>语义层</a>
+    <a class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>算子中心</a>
+  </nav>
+  <div class="sb-foot"><div class="foot-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/></svg>收起侧边栏</div></div>
+</aside>
+<div class="main">
+  <aside class="hist">
+    <div class="hist-hd">问答历史<span class="hist-cnt">0</span></div>
+    <div class="hist-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.67L3 21l1.8-5.2A8.3 8.3 0 0 1 3.8 11.5a8.38 8.38 0 0 1 9-8.35 8.5 8.5 0 0 1 8.2 8.35Z"/></svg>
+      <span style="font-size:11.5px">暂无问答记录</span>
+    </div>
+  </aside>
+  <div class="chat">
+    <div class="chat-body">
+      <div class="orb"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+      <h2>任务问答</h2>
+      <p class="desc">自然语言提问，AI 智能体将自主完成意图路由、数据查询（NL2SQL）、联网深度研究与可视化图表生成</p>
+      <div class="samples">
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span>对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>X渠道最近效果为什么持续变差？按月份和市场下钻找原因</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg><span>TikTok的CPI为什么从6月开始明显上涨？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><rect x="5" y="5" width="14" height="14" rx="3"/></svg><span>app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        <button class="sq"><svg class="sqc" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z"/></svg><span>2026年TikTok广告竞价成本上涨的原因及应对策略？</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D5B66" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+      </div>
+    </div>
+    <div class="input">
+      <div class="inbox">
+        <textarea placeholder="输入您的业务问题...（Ctrl+Enter 发送）"></textarea>
+        <button class="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+      </div>
+      <div class="foot-note">AI 生成内容仅供参考 · 支持多轮追问</div>
+    </div>
+  </div>
+</div>
+</body></html>

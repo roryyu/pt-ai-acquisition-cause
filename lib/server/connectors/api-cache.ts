@@ -37,6 +37,9 @@ export interface CachedRestRequestOptions {
   ttlSeconds?: number;
   /** 是否跳过限流等待（脚本/测试场景） */
   skipThrottle?: boolean;
+  /** 放宽响应体截断限制（字节，缺省 200KB）：供算子落库扩维取数等大明细场景；
+   * 未截断的大响应同样回写缓存（fresh 命中可复用，避免重复大请求） */
+  maxBodyBytes?: number;
 }
 
 const DEFAULT_TTL_SECONDS = 3600;
@@ -160,10 +163,10 @@ export async function cachedRestRequest(
   if (!options.skipThrottle) await throttle(options.sourceId);
   let result: ApiCallResult;
   try {
-    result = await executeRestRequest(config, input);
+    result = await executeRestRequest(config, input, { maxBodyBytes: options.maxBodyBytes });
     for (let attempt = 0; attempt < MAX_RETRIES && (result.status === 429 || result.status >= 500); attempt++) {
       await new Promise((resolve) => setTimeout(resolve, computeBackoffMs(attempt, result.retryAfterMs)));
-      result = await executeRestRequest(config, input);
+      result = await executeRestRequest(config, input, { maxBodyBytes: options.maxBodyBytes });
     }
   } catch (error) {
     // 网络异常且有旧缓存 → stale 降级
