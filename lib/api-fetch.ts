@@ -38,6 +38,17 @@ function httpErrorEnvelope(status: number): ApiEnvelope {
   };
 }
 
+/** 401 跳转去重：并发请求同时失败时只触发一次整页跳转 */
+let redirectingToLogin = false;
+
+/** 会话失效统一处理：整页跳转发起 OIDC 登录，带回跳地址 */
+function redirectToLogin(): void {
+  if (redirectingToLogin || typeof window === "undefined") return;
+  redirectingToLogin = true;
+  const returnTo = window.location.pathname + window.location.search;
+  window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+}
+
 /**
  * 发起请求并返回统一信封，永不 reject（网络异常/非 JSON 响应均归一为 `{ ok: false }`）。
  *
@@ -76,6 +87,10 @@ export async function apiFetch<T = any>(
   }
 
   if (!res.ok) {
+    // 401（会话失效/未登录）：整页跳转发起 OIDC 登录；auth 自身接口除外，避免死循环
+    if (res.status === 401 && !url.startsWith("/api/auth/")) {
+      redirectToLogin();
+    }
     // 优先采用服务端返回的标准错误信封，否则按状态码合成
     const envelope = body as ApiEnvelope<T> | null;
     if (envelope && envelope.ok === false && envelope.error) {

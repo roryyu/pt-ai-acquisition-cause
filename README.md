@@ -100,6 +100,8 @@ pt-ai-acquisition-cause/
 - Node.js 24.7.0（nvm 管理）
 - Docker（本地跑 PostgreSQL + Redis）
 - 一个 OpenAI 兼容的模型 API（BASE_URL / API_KEY / 模型名）
+- 鉴权依赖 PT AI Access 平台（identity :8094 + access-app :4300）：本地调试用同级目录的
+  `pt-access` 轻量模拟器代替完整三容器环境（见 doc/鉴权接入PT-AI-Access设计.md）
 
 ### 步骤
 
@@ -110,19 +112,24 @@ npm install
 # 2. 配置环境变量
 cp .env.example .env
 # 编辑 .env：至少填写 MODEL_GATEWAY_BASE_URL / MODEL_GATEWAY_API_KEY /
-# MODEL_GATEWAY_DEFAULT_MODEL / DATABASE_URL
+# MODEL_GATEWAY_DEFAULT_MODEL / DATABASE_URL；
+# OIDC_* / ACCESS_* 默认值即对接本地 pt-access 模拟器，通常无需改动
 
-# 3. 启动本地依赖并运行开发服务器
+# 3. 启动 Access 模拟器（另开终端，保持运行）
+node ../pt-access/server.mjs   # identity :8094 + access-app :4300
+
+# 4. 启动本地依赖并运行开发服务器
 npm run local:up        # = docker compose up -d && npm run dev
 
-# 4. 初始化数据库 Schema 与演示数据（另开终端）
+# 5. 初始化数据库 Schema 与演示数据（另开终端）
 npm run db:push                                   # 原型阶段推送 Schema
 npx tsx scripts/db-smoke.ts                       # 数据库冒烟验证
 npx tsx scripts/seed-demo-data.ts                 # 经营指标 / 投放数据种子
 npx tsx scripts/seed-acquisition-data.ts          # 买量渠道 / 计划种子
 npx tsx scripts/agent-smoke.ts                    # 模型网关连通性验证
 
-# 5. 打开 http://localhost:3000
+# 6. 打开 http://localhost:3100 → 「使用 PT AI 账号登录」
+#    模拟器账号：dev / dev-password（有 cause 权限）；viewer / viewer-password（无权限，测 403）
 ```
 
 ### 常用命令
