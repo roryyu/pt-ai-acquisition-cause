@@ -17,6 +17,12 @@ import type { ChartSpec } from "@/lib/agent-events";
 
 const PALETTE = ["#523b8f", "#8b6fd0", "#c9a8f0", "#176e53", "#875600", "#9b3141"];
 
+/** 与 globals.css body 字体栈保持一致，保证导出图内文字与页面观感相同 */
+const FONT_STACK =
+  '"Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif';
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 /** 数值格式化（千分位 / 百分比 / 万元 / 紧凑） */
 function formatValue(value: number, format?: ChartSpec["valueFormat"]): string {
   if (!Number.isFinite(value)) return String(value);
@@ -44,26 +50,114 @@ function toNumber(v: unknown): number {
 export function ChartRenderer({ spec, height = 300 }: { spec: ChartSpec; height?: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  /** 导出 PNG：SVG → canvas → 下载 */
+  /** 导出 PNG：把「标题 + 图表主体 + 图例」合成为自包含 SVG 后栅格化下载 */
   const exportPng = useCallback(() => {
-    const svg = containerRef.current?.querySelector("svg");
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Recharts 的图例/提示是 HTML 浮层，图例色块本身也是 svg，且在 DOM 中先于图表主体出现，
+    // 因此不能 querySelector("svg") 取第一个；图表主体是排除浮层后面积最大的 surface。
+    const surfaces = [...container.querySelectorAll<SVGSVGElement>("svg.recharts-surface")].filter(
+      (s) => !s.closest(".recharts-legend-wrapper, .recharts-tooltip-wrapper"),
+    );
+    const svg = surfaces.sort(
+      (a, b) => b.getBoundingClientRect().width * b.getBoundingClientRect().height -
+        a.getBoundingClientRect().width * a.getBoundingClientRect().height,
+    )[0];
     if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const width = Math.max(Math.round(rect.width), 600);
-    const height = Math.max(Math.round(rect.height), 300);
+
+    const svgRect = svg.getBoundingClientRect();
+    const chartW = Math.round(svgRect.width);
+    const chartH = Math.round(svgRect.height);
+    const PAD = 20;
+    const titleH = 28;
+    const width = chartW + PAD * 2;
+    const height = titleH + chartH + PAD * 2;
     const scale = 2;
 
-    // ResponsiveContainer 输出的 svg 使用百分比宽高且无 viewBox，
-    // 直接序列化成图片时浏览器无法确定内在尺寸（会按默认视口裁剪），
-    // 导致导出的 PNG 只包含图表的一部分。克隆后固定像素尺寸与 viewBox 修复。
-    const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    clone.setAttribute("width", String(width));
-    clone.setAttribute("height", String(height));
-    clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    const root = document.createElementNS(SVG_NS, "svg");
+    root.setAttribute("xmlns", SVG_NS);
+    root.setAttribute("width", String(width));
+    root.setAttribute("height", String(height));
+    root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    root.setAttribute("font-family", FONT_STACK);
+
+    const bg = document.createElementNS(SVG_NS, "rect");
+    bg.setAttribute("width", String(width));
+    bg.setAttribute("height", String(height));
+    bg.setAttribute("fill", "#fffefa");
+    root.appendChild(bg);
+
+    // 标题行：主标题 + 维度/单位说明，与卡片 figcaption 一致
+    const subtitle =
+      [spec.xLabel, spec.yLabel].filter(Boolean).join(" × ") + (spec.unit ? `（${spec.unit}）` : "");
+    const title = document.createElementNS(SVG_NS, "text");
+    title.setAttribute("x", String(PAD));
+    title.setAttribute("y", String(PAD + 15));
+    title.setAttribute("font-size", "15");
+    title.setAttribute("font-weight", "600");
+    title.setAttribute("fill", "#211a36");
+    title.textContent = spec.title;
+    root.appendChild(title);
+    if (subtitle) {
+      const measure = document.createElement("canvas").getContext("2d");
+      if (measure) {
+        measure.font = `600 15px ${FONT_STACK}`;
+        const sub = document.createElementNS(SVG_NS, "text");
+        sub.setAttribute("x", String(PAD + measure.measureText(spec.title).width + 8));
+        sub.setAttribute("y", String(PAD + 16));
+        sub.setAttribute("font-size", "12");
+        sub.setAttribute("fill", "#706b79");
+        sub.textContent = subtitle;
+        root.appendChild(sub);
+      }
+    }
+
+    // 图表主体：克隆为嵌套 svg 放置，保留其自身坐标系；
+    // 原 style 的 width/height:100% 会相对父级解析导致拉伸，必须移除。
+    const chart = svg.cloneNode(true) as SVGSVGElement;
+    chart.removeAttribute("style");
+    chart.setAttribute("x", String(PAD));
+    chart.setAttribute("y", String(PAD + titleH));
+    root.appendChild(chart);
+
+    // 图例：按屏幕上的实际位置描回图表底部（色块图标 + 文本）
+    const legend = container.querySelector<HTMLElement>(".recharts-legend-wrapper");
+    if (legend) {
+      const legendRect = legend.getBoundingClientRect();
+      const group = document.createElementNS(SVG_NS, "g");
+      group.setAttribute(
+        "transform",
+        `translate(${PAD + legendRect.x - svgRect.x}, ${PAD + titleH + legendRect.y - svgRect.y})`,
+      );
+      legend.querySelectorAll("li").forEach((li) => {
+        const icon = li.querySelector("svg");
+        if (icon) {
+          const iconRect = icon.getBoundingClientRect();
+          const clone = icon.cloneNode(true) as SVGSVGElement;
+          clone.removeAttribute("style");
+          clone.setAttribute("x", String(iconRect.x - legendRect.x));
+          clone.setAttribute("y", String(iconRect.y - legendRect.y));
+          group.appendChild(clone);
+        }
+        const label = li.querySelector(".recharts-legend-item-text");
+        if (label) {
+          const labelRect = label.getBoundingClientRect();
+          const text = document.createElementNS(SVG_NS, "text");
+          text.setAttribute("x", String(labelRect.x - legendRect.x));
+          text.setAttribute("y", String(labelRect.y - legendRect.y + labelRect.height / 2));
+          text.setAttribute("dominant-baseline", "central");
+          text.setAttribute("font-size", "12");
+          text.setAttribute("fill", getComputedStyle(label).color);
+          text.textContent = label.textContent ?? "";
+          group.appendChild(text);
+        }
+      });
+      root.appendChild(group);
+    }
 
     const serializer = new XMLSerializer();
-    const svgStr = serializer.serializeToString(clone);
+    const svgStr = serializer.serializeToString(root);
     const canvas = document.createElement("canvas");
     canvas.width = width * scale;
     canvas.height = height * scale;
@@ -80,7 +174,7 @@ export function ChartRenderer({ spec, height = 300 }: { spec: ChartSpec; height?
       link.click();
     };
     img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgStr)))}`;
-  }, [spec.title]);
+  }, [spec.title, spec.xLabel, spec.yLabel, spec.unit]);
 
   const data = spec.data.map((row) => {
     const copy: Record<string, unknown> = { ...row };

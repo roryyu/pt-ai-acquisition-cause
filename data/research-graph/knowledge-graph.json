@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-07T06:03:29.884Z",
+  "updatedAt": "2026-09-11T02:59:00.467Z",
   "nodes": [
     {
       "id": "node_13d37aaf-7229-4c9d-ab47-2cd6e126e87b",
@@ -127,11 +127,12 @@
       "id": "node_4ab08e46-0e64-4fb1-a907-a23155105795",
       "label": "CPI",
       "type": "entity",
-      "summary": "核心指标，研究指出外部检索无法提供其行业基准，渠道效果差缺乏对标依据[13]-[18]。",
+      "summary": "外部材料未提供 Xiaomi Ads 的 CPI、下载量、注册成本等可参考行业基准或异常判定标准。",
       "reportIds": [
-        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
+        "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce",
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
       ],
-      "updatedAt": "2026-09-07T06:03:29.884Z"
+      "updatedAt": "2026-09-11T02:59:00.467Z"
     },
     {
       "id": "node_1fe0dc94-7d06-48ad-b9d5-ebaa28eeffd3",
@@ -192,6 +193,206 @@
         "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
       ],
       "updatedAt": "2026-09-07T06:03:29.884Z"
+    },
+    {
+      "id": "node_94a7f94a-13e6-4525-bb3b-2da0156e1bac",
+      "label": "传音渠道",
+      "type": "entity",
+      "summary": "2026-08安装303,541、注册136，2026-09安装138,553、注册17，安装到注册转化率极低，具体恶化原因证据不足。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_55975154-a06d-42c1-a950-35871a3f20be",
+      "label": "传音",
+      "type": "entity",
+      "summary": "旗下拥有TECNO、itel、Infinix等品牌，具备厂商系终端入口基础，但未披露广告分发、渠道来源或注册转化链路[1]。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_62844c49-27cd-41f9-a8d2-e2411292834e",
+      "label": "Facebook",
+      "type": "entity",
+      "summary": "核心付费渠道之一，2026-05至2026-09安装→注册转化率从29.56%升至32.28%，未同步恶化。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_56dcdb20-9084-4531-a6ff-a2663d909622",
+      "label": "AppLovin",
+      "type": "entity",
+      "summary": "转化率约30%-31%稳定，但安装量从2026-05的6,661降至2026-09的1,124。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_f494308d-ba4c-4f90-b5e5-dacf4cc90b8e",
+      "label": "安装→注册转化率",
+      "type": "entity",
+      "summary": "用于衡量渠道漏斗恶化的核心指标，传音相关渠道为0.04%和0.01%，核心付费渠道约30%以上。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_fda76333-457a-43f7-9cf0-57a36dcbff7b",
+      "label": "网易免费邮箱注册页",
+      "type": "entity",
+      "summary": "材料仅显示注册页标题，未包含注册事件回传、归因口径或渠道包映射信息，无法验证传音渠道注册量是否被低估[7]。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_5c3bb2d5-2305-40aa-9031-f464881c41e0",
+      "label": "渠道转化异常归因",
+      "type": "topic",
+      "summary": "研究传音渠道高安装、低注册及转化率持续恶化的可能原因与验证方向。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_58993839-03e7-459e-9571-f351b3f37efc",
+      "label": "注册归因与数据治理",
+      "type": "topic",
+      "summary": "关注注册回传、归因口径、渠道包映射和数据链路核验对转化数据的影响。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_c530a70f-80b2-42a7-9cfd-04d9c54aaada",
+      "label": "异常流量与反作弊",
+      "type": "topic",
+      "summary": "关注刷量、不可信设备、渠道劫持等异常流量对高安装零注册现象的潜在影响。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126",
+      "label": "识别传音渠道安装到注册转化率持续恶化的主要可能原因，并形成可外部验证的归因、反作弊与治理方向。",
+      "type": "report",
+      "summary": "2026年8-9月传音相关渠道安装到注册转化率仅0.04%和0.01%，报告认为恶化主因证据不足，需核验归因回传、流量质量与作弊风险。",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ],
+      "updatedAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "id": "node_c33f2823-ca1f-44cd-8951-0444af58c9fd",
+      "label": "Xiaomi Ads",
+      "type": "entity",
+      "summary": "被评估投放渠道，任务背景显示其安装到注册转化率为14.18%，高于2026年8月大盘9.07%，但外部材料缺少渠道级投放、归因与效果数据。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_570e0636-6b4b-47a5-bc49-30e085be00b6",
+      "label": "小米商城",
+      "type": "entity",
+      "summary": "承接页面出现排队等待、服务器压力、验证码与区域选择等提示，可能成为安装后注册环节流失的外部弱旁证 [2]。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_6c514ac2-cc66-4d02-a640-05aae0a5fcbf",
+      "label": "小米官网",
+      "type": "entity",
+      "summary": "仅出现登录/注册和下载App入口，未披露注册事件埋点、归因窗口、去重规则或回传逻辑 [1][2]。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_e141b48f-d940-432a-afb6-7d8ac782073a",
+      "label": "小米集团",
+      "type": "entity",
+      "summary": "材料仅覆盖其成立、上市与业务背景，未提供 Xiaomi Ads 广告效果指标 [1][5]。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_f623f078-7be5-48e7-8d8e-85906c447e3b",
+      "label": "安装到注册转化率",
+      "type": "entity",
+      "summary": "核心判定指标，任务背景显示2026年5-8月大盘由12.32%降至9.07%，Xiaomi Ads为14.18%。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_89689646-8013-4fc4-9e80-85d7f7c2c40d",
+      "label": "《小米集团隐私政策》",
+      "type": "entity",
+      "summary": "页面仅列出政策入口，未展示具体条款，无法判断是否限制广告归因或造成注册转化统计低估 [1][2]。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_a6d63329-fdc6-42f4-ad9d-155bf9faa1a5",
+      "label": "渠道效果归因",
+      "type": "topic",
+      "summary": "判断 Xiaomi Ads 效果差是否由流量质量、归因回传、指标口径或转化链路导致。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_bdf4b396-b91c-43d7-8bc2-0faadd306f6e",
+      "label": "注册转化漏损",
+      "type": "topic",
+      "summary": "安装后进入注册环节可能因高并发、验证码、区域选择、链路或隐私政策产生流失。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "node_5054b8a9-7404-4b4e-a479-cf15e7ae16df",
+      "label": "行业基准缺失",
+      "type": "topic",
+      "summary": "外部材料未提供 CPI、安装到注册转化率、下载量、注册成本等可对比基准。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
+    },
+    {
+      "id": "question_ab71b333-7943-4bb3-9793-855ef03bc776",
+      "label": "识别 Xiaomi 渠道效果较差的根本原因，并从外部证据中验证其归因、流量质量、指标基准与优化方向。",
+      "type": "report",
+      "summary": "外部证据无法确认 Xiaomi Ads 效果差根因；2026年5-8月大盘安装到注册转化率降至9.07%，而Xiaomi Ads为14.18%，需重新判定。",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ],
+      "updatedAt": "2026-09-11T02:59:00.467Z"
     }
   ],
   "edges": [
@@ -354,6 +555,182 @@
       "reportIds": [
         "question_40bf3c52-193c-434b-87b0-80bbf0bdc6ce"
       ]
+    },
+    {
+      "source": "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126",
+      "target": "node_5c3bb2d5-2305-40aa-9031-f464881c41e0",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126",
+      "target": "node_58993839-03e7-459e-9571-f351b3f37efc",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126",
+      "target": "node_c530a70f-80b2-42a7-9cfd-04d9c54aaada",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_94a7f94a-13e6-4525-bb3b-2da0156e1bac",
+      "target": "node_f494308d-ba4c-4f90-b5e5-dacf4cc90b8e",
+      "relation": "2026-08/09表现极低",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_94a7f94a-13e6-4525-bb3b-2da0156e1bac",
+      "target": "node_5c3bb2d5-2305-40aa-9031-f464881c41e0",
+      "relation": "是核心待解释对象",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_55975154-a06d-42c1-a950-35871a3f20be",
+      "target": "node_94a7f94a-13e6-4525-bb3b-2da0156e1bac",
+      "relation": "具备厂商系终端入口基础",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_62844c49-27cd-41f9-a8d2-e2411292834e",
+      "target": "node_f494308d-ba4c-4f90-b5e5-dacf4cc90b8e",
+      "relation": "2026-05至09改善",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_56dcdb20-9084-4531-a6ff-a2663d909622",
+      "target": "node_f494308d-ba4c-4f90-b5e5-dacf4cc90b8e",
+      "relation": "约30%-31%稳定但安装量下降",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_fda76333-457a-43f7-9cf0-57a36dcbff7b",
+      "target": "node_58993839-03e7-459e-9571-f351b3f37efc",
+      "relation": "未提供回传/归因证据",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_94a7f94a-13e6-4525-bb3b-2da0156e1bac",
+      "target": "node_c530a70f-80b2-42a7-9cfd-04d9c54aaada",
+      "relation": "可能受刷量或劫持影响但证据不足",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "node_f494308d-ba4c-4f90-b5e5-dacf4cc90b8e",
+      "target": "node_5c3bb2d5-2305-40aa-9031-f464881c41e0",
+      "relation": "用于衡量恶化程度",
+      "reportIds": [
+        "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126"
+      ]
+    },
+    {
+      "source": "question_ab71b333-7943-4bb3-9793-855ef03bc776",
+      "target": "node_a6d63329-fdc6-42f4-ad9d-155bf9faa1a5",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "question_ab71b333-7943-4bb3-9793-855ef03bc776",
+      "target": "node_bdf4b396-b91c-43d7-8bc2-0faadd306f6e",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "question_ab71b333-7943-4bb3-9793-855ef03bc776",
+      "target": "node_5054b8a9-7404-4b4e-a479-cf15e7ae16df",
+      "relation": "研究涉及",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_c33f2823-ca1f-44cd-8951-0444af58c9fd",
+      "target": "node_f623f078-7be5-48e7-8d8e-85906c447e3b",
+      "relation": "转化率为14.18%",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_f623f078-7be5-48e7-8d8e-85906c447e3b",
+      "target": "node_a6d63329-fdc6-42f4-ad9d-155bf9faa1a5",
+      "relation": "用于判定",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_570e0636-6b4b-47a5-bc49-30e085be00b6",
+      "target": "node_bdf4b396-b91c-43d7-8bc2-0faadd306f6e",
+      "relation": "可能阻断注册",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_6c514ac2-cc66-4d02-a640-05aae0a5fcbf",
+      "target": "node_a6d63329-fdc6-42f4-ad9d-155bf9faa1a5",
+      "relation": "未披露回传逻辑",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_89689646-8013-4fc4-9e80-85d7f7c2c40d",
+      "target": "node_bdf4b396-b91c-43d7-8bc2-0faadd306f6e",
+      "relation": "无法验证影响",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_4ab08e46-0e64-4fb1-a907-a23155105795",
+      "target": "node_5054b8a9-7404-4b4e-a479-cf15e7ae16df",
+      "relation": "缺少外部基准",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_c33f2823-ca1f-44cd-8951-0444af58c9fd",
+      "target": "node_a6d63329-fdc6-42f4-ad9d-155bf9faa1a5",
+      "relation": "根因未确认",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
+    },
+    {
+      "source": "node_c33f2823-ca1f-44cd-8951-0444af58c9fd",
+      "target": "node_5054b8a9-7404-4b4e-a479-cf15e7ae16df",
+      "relation": "缺少指标基准",
+      "reportIds": [
+        "question_ab71b333-7943-4bb3-9793-855ef03bc776"
+      ]
     }
   ],
   "reports": [
@@ -370,6 +747,20 @@
       "objective": "针对某广告渠道投放效果不佳，从归因诊断、渠道特性优化、指标基准、流量质量校验与试验决策五个维度形成可落地的外部优化方案与决策框架。",
       "summary": "本研究围绕“X渠道效果差如何优化”从归因诊断、渠道调整、指标基准、流量校验、试验决策五维检索，42条材料零条有效证据，高置信度；结合2026-09-04历史结论，确认数据治理是唯一前置任务，30天数据成本/点击/转化缺失。",
       "createdAt": "2026-09-07T06:03:29.883Z"
+    },
+    {
+      "questionId": "question_72a6d0cc-46b7-4c99-a0e0-3fdcc8095126",
+      "question": "根据数据分析，传音渠道持续恶化的主要原因可能是什么？",
+      "objective": "识别传音渠道安装到注册转化率持续恶化的主要可能原因，并形成可外部验证的归因、反作弊与治理方向。",
+      "summary": "2026年8-9月传音相关渠道安装到注册转化率仅0.04%和0.01%，报告认为恶化主因证据不足，需核验归因回传、流量质量与作弊风险。",
+      "createdAt": "2026-09-10T02:36:16.547Z"
+    },
+    {
+      "questionId": "question_ab71b333-7943-4bb3-9793-855ef03bc776",
+      "question": "xiaomi渠道效果比较差，根本原因是什么？",
+      "objective": "识别 Xiaomi 渠道效果较差的根本原因，并从外部证据中验证其归因、流量质量、指标基准与优化方向。",
+      "summary": "外部证据无法确认 Xiaomi Ads 效果差根因；2026年5-8月大盘安装到注册转化率降至9.07%，而Xiaomi Ads为14.18%，需重新判定。",
+      "createdAt": "2026-09-11T02:59:00.467Z"
     }
   ]
 }

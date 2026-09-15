@@ -350,7 +350,7 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
               <div className="mt-6 flex w-full max-w-lg flex-col gap-2">
                 {[
                   { text: "对比Meta/X/TikTok今年以来的花费、下载、FD、RD与ROI，哪个渠道性价比最高？", icon: BarChart3 },
-                  { text: "X渠道最近效果为什么持续变差？按月份和市场下钻找原因", icon: TrendingDown },
+                  { text: "按投放渠道，安装量到注册量的转化率如何？月度变化是改善还是恶化了？", icon: TrendingDown },
                   { text: "TikTok的CPI为什么从6月开始明显上涨？", icon: TrendingUp },
                   { text: "app和web两个承接端的FD/RD转化有什么差异？召回充值应该侧重哪端？", icon: Layers },
                   { text: "2026年TikTok广告竞价成本上涨的原因及应对策略？", icon: Globe },
@@ -562,13 +562,14 @@ export function AskClient({ initialQuestionId }: { initialQuestionId?: string })
         </div>
       </div>
 
-      {/* 加入画布弹窗：选画布/新建后深链跳转自动导入 */}
+      {/* 加入画布弹窗：勾图表 + 选画布/新建，确认后深链跳转自动一图一卡导入 */}
       <AddToCanvasDialog
         open={addToCanvasOpen}
         onClose={() => setAddToCanvasOpen(false)}
         sourceType="question"
         sourceId={bridgeQuestionId ?? ""}
         sourceTitle={viewing ? viewing.question : currentQuestion}
+        charts={(viewing?.answer.charts ?? state.charts) ?? []}
       />
     </div>
   );

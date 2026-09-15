@@ -30,6 +30,11 @@ export interface TLLiveContentShapeProps {
   sourceStatus: string;
   /** 最近更新时间（ISO） */
   updatedAt: string;
+  /**
+   * 仅展示 payload.charts 中该下标的图表（问答弹窗勾选后「一图一卡」导入）；
+   * -1 表示不限定，展示来源全部图表（下标越界时同样回退为全部）。
+   */
+  chartIndex: number;
 }
 
 // 模块增强：将自定义形状注册进 tldraw 全局形状表，TLShape 联合类型方可识别
@@ -74,6 +79,7 @@ export class LiveContentShapeUtil extends BaseBoxShapeUtil<TLLiveContentShape> {
       payload: null,
       sourceStatus: "unknown",
       updatedAt: "",
+      chartIndex: -1,
     };
   }
 
@@ -82,6 +88,7 @@ export class LiveContentShapeUtil extends BaseBoxShapeUtil<TLLiveContentShape> {
     // 旧 snapshot 中的形状可能缺少新字段，兼容空值（等同于未绑定来源）
     const sourceType = shape.props.sourceType ?? "";
     const sourceId = shape.props.sourceId ?? "";
+    const chartIndex = shape.props.chartIndex ?? -1;
     const running = isSourceRunning(sourceStatus);
     const deleted = isSourceDeleted(sourceStatus);
     const href = sourceHref(sourceType, sourceId);
@@ -179,7 +186,13 @@ export class LiveContentShapeUtil extends BaseBoxShapeUtil<TLLiveContentShape> {
 
         {/* 卡片体：按 payload 类型渲染 */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: 12 }}>
-          <LiveCardBody payload={payload} width={shape.props.w - 24} height={shape.props.h - 76} running={running} />
+          <LiveCardBody
+            payload={payload}
+            width={shape.props.w - 24}
+            height={shape.props.h - 76}
+            running={running}
+            chartIndex={chartIndex}
+          />
         </div>
       </HTMLContainer>
     );
@@ -208,11 +221,14 @@ function LiveCardBody({
   width,
   height,
   running,
+  chartIndex,
 }: {
   payload: LivePayload | null;
   width: number;
   height: number;
   running: boolean;
+  /** 仅展示该下标的图表；-1 / 越界时展示全部 */
+  chartIndex: number;
 }) {
   // 占位：无内容或源运行中
   if (!payload || (running && !payload.text && !payload.charts?.length)) {
@@ -244,16 +260,38 @@ function LiveCardBody({
     );
   }
 
-  // 图表类：第一张图占主体
+  // 图表类：一图一卡（指定 chartIndex）时单图撑满主体，
+  // 否则全部图表纵向排列、超出卡片高度时内部滚动
   if (payload.kind === "chart" && payload.charts && payload.charts.length > 0) {
+    const pickedChart = chartIndex >= 0 ? payload.charts[chartIndex] : undefined;
+    // 下标越界（源图表变动）时回退为展示全部
+    const charts = pickedChart ? [pickedChart] : payload.charts;
+    // 单图卡片不再重复底部摘要（同一来源多张卡会重复展示同一段结论）
+    const showSnippet = !pickedChart;
     // ChartRenderer 外框（标题栏+mb-3+内边距+边框）固定占约 72px，底部摘要区占 56px，
     // 两者都须从图表区高度中扣除，否则图表向下溢出与摘要文字重叠
-    const chartHeight = Math.max(120, height - 72 - (payload.text ? 56 : 0));
-    const snippet = payload.text ? plainSnippet(payload.text) : "";
+    const singleHeight = Math.max(120, height - 72 - (payload.text && showSnippet ? 56 : 0));
+    const snippet = payload.text && showSnippet ? plainSnippet(payload.text) : "";
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6, height: "100%" }}>
-        <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-          <ChartRenderer spec={payload.charts[0]!} height={chartHeight} />
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: charts.length > 1 ? "auto" : "hidden",
+            overflowX: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+          // 滚轮留给卡片内图表列表，避免触发 tldraw 画布缩放/平移
+          onWheel={(e) => e.stopPropagation()}
+        >
+          {charts.map((chart, i) => (
+            <div key={`${chart.type}-${chart.title}-${i}`} style={{ flexShrink: 0 }}>
+              <ChartRenderer spec={chart} height={charts.length === 1 ? singleHeight : 210} />
+            </div>
+          ))}
         </div>
         {snippet && (
           <div

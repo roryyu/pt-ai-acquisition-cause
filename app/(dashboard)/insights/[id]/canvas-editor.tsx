@@ -95,6 +95,55 @@ interface ScheduleJobView {
 /** 自定义形状注册表（模块级常量，避免每次渲染重建） */
 const SHAPE_UTILS = [LiveContentShapeUtil];
 
+/** 实时卡片默认宽度 / 一图一卡时的横向间距（与 LiveContentShapeUtil.getDefaultProps 一致） */
+const CARD_WIDTH = 460;
+const CARD_GAP = 24;
+
+/** 解析深链图表下标参数：`0,2` → [0, 2]（非法/越界片段忽略） */
+function parseChartIndexes(raw?: string): number[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0);
+}
+
+/** 形状记录的宽松形态（仅关心自定义实时卡片的 props） */
+type LooseRecord = {
+  typeName?: string;
+  type?: string;
+  props?: Record<string, unknown>;
+};
+
+/**
+ * 画布快照瘦身：落盘前剔除实时卡片里的 payload。
+ * payload 已由 CanvasBinding 表持久化（挂载后立即回灌，见下方绑定水合），
+ * 形状内再存一份会让快照随图表数据线性膨胀——实测 2 张卡片即 66KB，
+ * 超过浏览器 keepalive 请求 64KB 上限后，刷新/关闭前的冲刷保存会被直接拒绝，
+ * 改动全部丢失（表现为页头长期停在「待保存」）。
+ */
+function stripLivePayload(snapshot: TLEditorSnapshot): TLEditorSnapshot {
+  const store = snapshot.document?.store as Record<string, LooseRecord> | undefined;
+  if (!store) return snapshot;
+  const next: Record<string, LooseRecord> = {};
+  let changed = false;
+  for (const [key, record] of Object.entries(store)) {
+    if (record?.typeName === "shape" && record.type === "live-content" && record.props?.payload) {
+      const props = { ...record.props };
+      delete props.payload;
+      next[key] = { ...record, props };
+      changed = true;
+    } else {
+      next[key] = record;
+    }
+  }
+  if (!changed) return snapshot;
+  return {
+    ...snapshot,
+    document: { ...snapshot.document, store: next },
+  } as TLEditorSnapshot;
+}
+
 /** 覆盖 tldraw 主菜单：在内容区前注入「导入内容」入口 */
 function CanvasMainMenu({ onOpenImport }: { onOpenImport: () => void }) {
   return (
@@ -122,10 +171,13 @@ function CanvasMainMenu({ onOpenImport }: { onOpenImport: () => void }) {
 export function InsightsDetailEditor({
   docId,
   initialImport,
+  initialCharts,
 }: {
   docId: string;
   /** 深链导入参数 {sourceType}:{sourceId}：挂载后自动创建形状与绑定，消费一次后清除 URL 参数 */
   initialImport?: string;
+  /** 深链图表下标参数（如 "0,2"）：每个下标建一张单图卡片 */
+  initialCharts?: string;
 }) {
   const [doc, setDoc] = useState<DocMeta | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -156,33 +208,39 @@ export function InsightsDetailEditor({
     window.setTimeout(() => setNotice(""), 3200);
   }, []);
 
-  /** 立即 PUT 画布快照，返回是否真正落盘成功 */
-  const persistSnapshot = useCallback(async () => {
-    const ed = editorRef.current;
-    if (!ed) return false;
-    dirtyRef.current = false;
-    setSaveState("saving");
-    try {
-      const json = await apiFetch(`/api/v1/insights/${docId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        // keepalive：页面刷新/关闭时浏览器仍会送出该请求
-        keepalive: true,
-        body: JSON.stringify({ snapshot: getSnapshot(ed.store) }),
-      });
-      // HTTP 非 2xx 或业务失败（如快照超限）同样视为未保存，避免“已保存”误提示
-      if (!json.ok) {
-        throw new Error(json.error?.message ?? "保存失败");
+  /**
+   * 立即 PUT 画布快照，返回是否真正落盘成功
+   * @param keepalive 仅页面刷新/关闭前的冲刷需要（文档销毁后仍送出请求）；
+   *   常规保存不要开——keepalive 有 64KB 请求体上限，超限会直接抛 Failed to fetch
+   */
+  const persistSnapshot = useCallback(
+    async (options?: { keepalive?: boolean }) => {
+      const ed = editorRef.current;
+      if (!ed) return false;
+      dirtyRef.current = false;
+      setSaveState("saving");
+      try {
+        const json = await apiFetch(`/api/v1/insights/${docId}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          ...(options?.keepalive ? { keepalive: true } : {}),
+          body: JSON.stringify({ snapshot: stripLivePayload(getSnapshot(ed.store)) }),
+        });
+        // HTTP 非 2xx 或业务失败（如快照超限）同样视为未保存，避免“已保存”误提示
+        if (!json.ok) {
+          throw new Error(json.error?.message ?? "保存失败");
+        }
+        setSaveState("idle");
+        return true;
+      } catch (error) {
+        dirtyRef.current = true;
+        setSaveState("dirty");
+        notify(error instanceof Error ? error.message : "保存失败，内容仅保留在当前页面");
+        return false;
       }
-      setSaveState("idle");
-      return true;
-    } catch (error) {
-      dirtyRef.current = true;
-      setSaveState("dirty");
-      notify(error instanceof Error ? error.message : "保存失败，内容仅保留在当前页面");
-      return false;
-    }
-  }, [docId, notify]);
+    },
+    [docId, notify],
+  );
 
   /** 防抖保存画布快照 */
   const scheduleSave = useCallback(() => {
@@ -197,18 +255,21 @@ export function InsightsDetailEditor({
 
   // 组件卸载（站内返回/切换画布）与页面刷新前，冲刷防抖窗口内的最后一次编辑
   useEffect(() => {
-    const flush = () => {
+    const flush = (keepalive: boolean) => {
       if (!dirtyRef.current) return;
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
-      void persistSnapshot();
+      void persistSnapshot({ keepalive });
     };
-    window.addEventListener("beforeunload", flush);
+    // 真实刷新/关闭：文档即将销毁，必须 keepalive 才能送出
+    const onBeforeUnload = () => flush(true);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
-      window.removeEventListener("beforeunload", flush);
-      flush();
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      // 组件卸载（站内路由跳转）：文档仍存活，普通请求即可，避开 keepalive 体积上限
+      flush(false);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = null;
     };
@@ -309,6 +370,25 @@ export function InsightsDetailEditor({
     return dispose;
   }, [editor]);
 
+  // 挂载后立即回灌一次绑定：快照不再存 payload（见 stripLivePayload），
+  // 内容以绑定表为准；不带 refresh=1，避免打开画布就重跑数据源
+  useEffect(() => {
+    if (!editor) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const json = await apiFetch(`/api/v1/insights/${docId}/bindings`);
+        if (cancelled || !json.ok) return;
+        (json.data.bindings as BindingView[]).forEach(applyBinding);
+      } catch {
+        // 静默：10s 轮询会再拉一次
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editor, docId, applyBinding]);
+
   // 每 10s 轮询绑定，刷新运行中源的内容
   useEffect(() => {
     if (!editor) return;
@@ -337,38 +417,69 @@ export function InsightsDetailEditor({
     void persistSnapshot();
   }, [persistSnapshot]);
 
-  /** 导入来源：创建实时形状 → 建立绑定 → 回填 payload */
+  /**
+   * 导入来源：创建实时形状 → 建立绑定 → 回填 payload
+   * 指定 chartIndexes（弹窗勾选多张图表）时按「一图一卡」横向排开创建多张卡片，
+   * 每张卡片各自持有绑定（删卡级联清绑定、轮询各自刷新）；单张绑定失败仅回滚该卡。
+   */
   const handleImport = useCallback(
     async (source: ImportSource) => {
       const ed = editorRef.current;
       if (!ed) return;
-      const shapeId = createShapeId();
       const screenCenter = ed.getViewportScreenCenter();
       const page = ed.screenToPage(screenCenter);
-      ed.createShape({
-        id: shapeId,
-        type: "live-content",
-        x: page.x - 230,
-        y: page.y - 170,
-        props: { sourceStatus: "running" },
-      });
-      const json = await apiFetch(`/api/v1/insights/${docId}/bindings`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sourceType: source.sourceType, sourceId: source.sourceId, shapeId }),
-      });
-      if (!json.ok) {
-        ed.deleteShape(shapeId);
-        throw new Error(json.error?.message ?? "绑定失败");
+      // undefined 表示整段内容一张卡片（未勾选具体图表 / 研究类来源）
+      const targets: (number | undefined)[] =
+        source.chartIndexes && source.chartIndexes.length > 0 ? source.chartIndexes : [undefined];
+      const totalWidth = targets.length * CARD_WIDTH + (targets.length - 1) * CARD_GAP;
+      const startX = page.x - totalWidth / 2;
+      let created = 0;
+      let lastError = "";
+
+      for (let i = 0; i < targets.length; i += 1) {
+        const chartIndex = targets[i];
+        const shapeId = createShapeId();
+        ed.createShape({
+          id: shapeId,
+          type: "live-content",
+          x: startX + i * (CARD_WIDTH + CARD_GAP),
+          y: page.y - 170,
+          props: {
+            sourceStatus: "running",
+            ...(chartIndex === undefined ? {} : { chartIndex }),
+          },
+        });
+        try {
+          const json = await apiFetch(`/api/v1/insights/${docId}/bindings`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              sourceType: source.sourceType,
+              sourceId: source.sourceId,
+              shapeId,
+            }),
+          });
+          if (!json.ok) throw new Error(json.error?.message ?? "绑定失败");
+          applyBinding(json.data as BindingView);
+          created += 1;
+        } catch (error) {
+          ed.deleteShape(shapeId);
+          lastError = error instanceof Error ? error.message : "绑定失败";
+        }
       }
-      applyBinding(json.data as BindingView);
+
+      if (created === 0) throw new Error(lastError || "导入失败");
       scheduleSave();
-      notify("已导入，源任务更新时将自动刷新");
+      notify(
+        created > 1
+          ? `已添加 ${created} 张图表卡片，源任务更新时将自动刷新`
+          : "已导入，源任务更新时将自动刷新",
+      );
     },
     [docId, applyBinding, scheduleSave, notify],
   );
 
-  // 深链自动导入：?import={sourceType}:{sourceId}，编辑器就绪后消费一次并清除 URL 参数
+  // 深链自动导入：?import={sourceType}:{sourceId}&charts={下标}，编辑器就绪后消费一次并清除 URL 参数
   useEffect(() => {
     if (!editor || !initialImport || importConsumed.current) return;
     importConsumed.current = true;
@@ -376,13 +487,15 @@ export function InsightsDetailEditor({
     const sourceType = initialImport.slice(0, sep);
     const sourceId = initialImport.slice(sep + 1);
     if ((sourceType === "question" || sourceType === "research") && sourceId) {
-      handleImport({ sourceType, sourceId }).catch(() => {
-        notify("自动导入失败，可经右上角「导入」手动重试");
-      });
+      handleImport({ sourceType, sourceId, chartIndexes: parseChartIndexes(initialCharts) }).catch(
+        () => {
+          notify("自动导入失败，可经右上角「导入」手动重试");
+        },
+      );
     }
     // 无论成败都清除参数，避免刷新重复导入
     window.history.replaceState(null, "", `/insights/${docId}`);
-  }, [editor, initialImport, docId, handleImport, notify]);
+  }, [editor, initialImport, initialCharts, docId, handleImport, notify]);
 
   /** 导出 PNG：下载 + 存档 */
   const handleExport = useCallback(async () => {

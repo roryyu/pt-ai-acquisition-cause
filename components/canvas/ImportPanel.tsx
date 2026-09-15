@@ -30,6 +30,11 @@ interface ResearchItem {
 export interface ImportSource {
   sourceType: "question" | "research";
   sourceId: string;
+  /**
+   * 需导入的图表下标（问答弹窗多选传入）：
+   * 有值时画布端按「一图一卡」创建多张实时卡片，缺省则整段内容为一张卡片。
+   */
+  chartIndexes?: number[];
 }
 
 /**

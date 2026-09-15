@@ -30,10 +30,19 @@ const InsightsDetailEditor = dynamic(
 export function InsightsDetailClient({
   docId,
   initialImport,
+  initialCharts,
 }: {
   docId: string;
   /** 深链导入参数：{sourceType}:{sourceId}，由编辑器挂载后自动消费 */
   initialImport?: string;
+  /** 深链图表下标参数：逗号分隔（如 "0,2"），一图一卡导入 */
+  initialCharts?: string;
 }) {
-  return <InsightsDetailEditor docId={docId} initialImport={initialImport} />;
+  return (
+    <InsightsDetailEditor
+      docId={docId}
+      initialImport={initialImport}
+      initialCharts={initialCharts}
+    />
+  );
 }
