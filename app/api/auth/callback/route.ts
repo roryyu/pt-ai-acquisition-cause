@@ -1,33 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
-import {
-  AccessDeniedError,
-  AccessUnavailableError,
-  activateSession,
-} from "@/lib/server/auth/access-client";
+import { activateSession } from "@/lib/server/auth/access-client";
+import { authFailureCode, logAuthRouteFailure } from "@/lib/server/auth/log";
 import { exchangeCodeForIdToken, OidcError } from "@/lib/server/auth/oidc";
+import { safeRelativeReturnTo } from "@/lib/server/auth/safe-return-to";
 import {
   buildSessionCookie,
   claimLoginTransaction,
   createSession,
   upsertUserFromPrincipal,
 } from "@/lib/server/auth/session";
-
-/** 错误码归一：失败一律 302 回登录页展示，不裸 500 */
-function toErrorCode(error: unknown): string {
-  if (error instanceof OidcError) return error.code;
-  if (error instanceof AccessDeniedError) return error.code;
-  if (error instanceof AccessUnavailableError) return "access_unavailable";
-  return "internal_error";
-}
-
-function redirectToLogin(errorCode: string): NextResponse {
-  return NextResponse.redirect(
-    new URL(`/login?error=${encodeURIComponent(errorCode)}`, env.APP_URL),
-    302,
-  );
-}
 
 /**
  * GET /api/auth/callback?code=xxx&state=xxx
@@ -40,6 +23,8 @@ function redirectToLogin(errorCode: string): NextResponse {
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
+  // 登录事务里存的回跳目标：失败时一并带回登录页，用户重试后仍落回原页面
+  let returnTo = "/";
   try {
     // identity 侧直接拒绝（如用户取消）
     const providerError = url.searchParams.get("error");
@@ -56,6 +41,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (!transaction) {
       throw new OidcError("invalid_state", "登录事务无效或已过期，请重新登录");
     }
+    returnTo = safeRelativeReturnTo(transaction.returnTo, "/");
 
     const claims = await exchangeCodeForIdToken({
       code,
@@ -69,12 +55,19 @@ export async function GET(request: Request): Promise<NextResponse> {
     await upsertUserFromPrincipal(principal);
 
     const token = await createSession(principal.subject);
-    const response = NextResponse.redirect(new URL(transaction.returnTo ?? "/", env.APP_URL), 302);
+    const response = NextResponse.redirect(new URL(returnTo, env.APP_URL), 302);
     response.cookies.set(buildSessionCookie(token));
     console.log(`[auth/callback] 登录成功 sub=${principal.subject} username=${principal.username}`);
     return response;
   } catch (error) {
-    console.error("[auth/callback] 登录失败:", error);
-    return redirectToLogin(toErrorCode(error));
+    // 失败一律 302 回登录页展示分类错误（不裸 500），并留结构化日志便于排障
+    logAuthRouteFailure(url.pathname, error);
+    return NextResponse.redirect(
+      new URL(
+        `/login?error=${encodeURIComponent(authFailureCode(error))}&returnTo=${encodeURIComponent(returnTo)}`,
+        env.APP_URL,
+      ),
+      302,
+    );
   }
 }

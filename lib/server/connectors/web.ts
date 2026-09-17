@@ -1,12 +1,16 @@
 import * as cheerio from "cheerio";
+import * as DDG from "duck-duck-scrape";
+import { extractFromHtml } from "@extractus/article-extractor";
 import { env } from "@/lib/env";
 
 /**
  * Web 数据接入连接器（design.md 5.1.4）
  *
- * 能力：
- * 1. webSearch — 多源搜索（优先 Firecrawl；未配置时降级 DuckDuckGo HTML 接口，无需 Key）
- * 2. fetchPage — 抓取网页并提取正文（Firecrawl / 直接 fetch + cheerio 解析）
+ * 能力（纯 Node 进程内，无需额外服务 / 无需 Docker / 无需 API Key）：
+ * 1. webSearch — 多源搜索：DDG Lite（主，轻量端点带摘要）
+ *    → DDG HTML / duck-duck-scrape（备）→ Bing RSS / Bing HTML（末位兜底）
+ * 2. fetchPage — 抓取网页并提取正文：@extractus/article-extractor（Reader-Mode 级）
+ *    → cheerio 启发式（兜底）
  *
  * 约束（design.md 5.1.4）：
  * - 遵守 robots.txt 精神的黑名单（内网地址直接拒绝，防 SSRF）
@@ -71,20 +75,106 @@ export interface SearchResult {
 }
 
 /**
- * 网页搜索：Bing HTML 结果解析（主源）+ DuckDuckGo（备用）
- * 两端均无需 API Key，结果为结构化 {title, url, snippet}
+ * 网页搜索（纯 Node 进程内，无需 Key / 服务 / Docker）：
+ * 主源 DDG Lite（轻量 HTML 端点，反爬宽松，结果相关度高且带摘要）
+ * → DDG HTML（旧端点兜底）→ duck-duck-scrape（库直连，部分网络可用）
+ * → Bing RSS（官方 XML feed）→ Bing HTML（最后兜底）
+ * 注：Bing 对机器人客户端会降级返回低相关结果，故置于链路末位
  */
 export async function webSearch(query: string, maxResults = 6): Promise<SearchResult[]> {
   const q = query.trim().slice(0, 300);
   if (!q) return [];
 
-  // 主源：Bing
-  let results = await searchBing(q, maxResults);
-  // 备用：DuckDuckGo
-  if (results.length === 0) {
-    results = await searchDuckDuckGo(q, maxResults);
-  }
+  let results = await searchDdgLite(q, maxResults);
+  if (results.length === 0) results = await searchDuckDuckGo(q, maxResults);
+  if (results.length === 0) results = await searchDdgLib(q, maxResults);
+  if (results.length === 0) results = await searchBingRss(q, maxResults);
+  if (results.length === 0) results = await searchBing(q, maxResults);
   return results;
+}
+
+/** 主源：DuckDuckGo Lite（极简 HTML 端点，结构稳定：a.result-link 标题 + 相邻 tr 的 td.result-snippet 摘要） */
+async function searchDdgLite(query: string, maxResults: number): Promise<SearchResult[]> {
+  await throttle();
+  try {
+    const res = await fetchWithTimeout(
+      `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
+      { method: "GET" },
+      12_000,
+    );
+    if (!res.ok) return [];
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const results: SearchResult[] = [];
+    $("a.result-link").each((_, el) => {
+      if (results.length >= maxResults) return;
+      const title = $(el).text().trim();
+      const url = decodeDdgUrl($(el).attr("href") ?? "");
+      // 摘要位于标题所在 tr 的相邻 tr
+      const snippet = $(el).closest("tr").next("tr").find("td.result-snippet").text().trim();
+      if (title && url && !url.includes("duckduckgo.com/y.js")) {
+        results.push({ title, url, snippet, source: "duckduckgo" });
+      }
+    });
+    return results;
+  } catch (error) {
+    console.warn("[web-connector] DDG Lite 搜索失败:", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+/** 备源：duck-duck-scrape（npm 库，进程内直连，返回带摘要的结构化结果；部分网络会被风控拦截） */
+async function searchDdgLib(query: string, maxResults: number): Promise<SearchResult[]> {
+  await throttle();
+  try {
+    const res = await DDG.search(query, {
+      safeSearch: DDG.SafeSearchType.OFF,
+      locale: "cn-zh",
+    });
+    if (!res || res.noResults) return [];
+    const out: SearchResult[] = [];
+    for (const r of res.results) {
+      if (out.length >= maxResults) break;
+      const url = r.url ?? "";
+      const title = (r.title ?? "").trim();
+      if (title && /^https?:\/\//.test(url)) {
+        out.push({ title, url, snippet: (r.description ?? "").trim(), source: "duckduckgo" });
+      }
+    }
+    return out;
+  } catch (error) {
+    console.warn("[web-connector] DDG(lib) 搜索失败:", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+/** 次源：Bing 官方 RSS feed（结构化 XML，反爬远弱于 HTML 页，复用 cheerio 解析） */
+async function searchBingRss(query: string, maxResults: number): Promise<SearchResult[]> {
+  await throttle();
+  try {
+    const res = await fetchWithTimeout(
+      `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss&setmkt=zh-CN&count=${maxResults}`,
+      { method: "GET" },
+      15_000,
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const $ = cheerio.load(xml, { xml: true });
+    const results: SearchResult[] = [];
+    $("item").each((_, el) => {
+      if (results.length >= maxResults) return;
+      const title = $(el).find("title").text().trim();
+      const url = $(el).find("link").text().trim();
+      const snippet = $(el).find("description").text().trim();
+      if (title && /^https?:\/\//.test(url)) {
+        results.push({ title, url, snippet, source: "bing" });
+      }
+    });
+    return results;
+  } catch (error) {
+    console.warn("[web-connector] Bing RSS 搜索失败:", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 async function searchBing(query: string, maxResults: number): Promise<SearchResult[]> {
@@ -134,7 +224,8 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<Sear
       const title = linkEl.text().trim();
       const url = decodeDdgUrl(linkEl.attr("href") ?? "");
       const snippet = $(el).find(".result__snippet").first().text().trim();
-      if (title && url) {
+      // 过滤广告链接（uddg 解码后指向 duckduckgo.com/y.js 的为广告）
+      if (title && url && !url.includes("duckduckgo.com/y.js")) {
         results.push({ title, url, snippet, source: "duckduckgo" });
       }
     });
@@ -170,8 +261,9 @@ export interface FetchedPage {
 }
 
 /**
- * 抓取网页正文：去除 nav/footer/script/style 等噪声，提取主体文本
- * （Firecrawl 未配置时使用内置解析器）
+ * 抓取网页正文：
+ * 主提取器 @extractus/article-extractor（Reader-Mode 级正文抽取，自动去噪）
+ * → 兜底 cheerio 启发式（抽取失败或正文过短时）
  */
 export async function fetchPage(url: string, maxChars = 6000): Promise<FetchedPage> {
   const guard = assertPublicUrl(url);
@@ -187,24 +279,45 @@ export async function fetchPage(url: string, maxChars = 6000): Promise<FetchedPa
     throw new Error(`不支持的内容类型：${contentType || "unknown"}`);
   }
   const html = await res.text();
-  const $ = cheerio.load(html);
 
-  const title =
-    $("title").first().text().trim() ||
-    $('meta[property="og:title"]').attr("content")?.trim() ||
-    url;
-
-  // 移除噪声节点
-  $("script, style, noscript, nav, header, footer, aside, iframe, form, button, svg").remove();
-  $("[role=navigation], [role=banner], [role=contentinfo], .nav, .footer, .sidebar, .ad, .advertisement").remove();
-
-  // 提取正文容器优先
-  const candidates = ["article", "main", ".article-content", "#content", ".content", "body"];
+  // 主提取器：article-extractor（返回清洗后的正文 HTML 与标题）
+  let title = "";
   let text = "";
-  for (const sel of candidates) {
-    const content = $(sel).first().text();
-    if (content.length > text.length) text = content;
+  try {
+    const article = await extractFromHtml(html, url);
+    if (article) {
+      title = (article.title ?? "").trim();
+      text = cheerio.load(article.content ?? "").text();
+    }
+  } catch (error) {
+    console.warn(
+      "[web-connector] article-extractor 抽取失败，降级 cheerio:",
+      error instanceof Error ? error.message : error,
+    );
   }
+
+  // 兜底：原 cheerio 启发式解析（抽取失败或正文过短时）
+  if (text.trim().length < 120) {
+    const $ = cheerio.load(html);
+    title =
+      title ||
+      $("title").first().text().trim() ||
+      $('meta[property="og:title"]').attr("content")?.trim() ||
+      url;
+    // 移除噪声节点
+    $("script, style, noscript, nav, header, footer, aside, iframe, form, button, svg").remove();
+    $("[role=navigation], [role=banner], [role=contentinfo], .nav, .footer, .sidebar, .ad, .advertisement").remove();
+    // 提取正文容器优先
+    const candidates = ["article", "main", ".article-content", "#content", ".content", "body"];
+    let fallbackText = "";
+    for (const sel of candidates) {
+      const content = $(sel).first().text();
+      if (content.length > fallbackText.length) fallbackText = content;
+    }
+    if (fallbackText.length > text.length) text = fallbackText;
+  }
+
+  if (!title) title = url;
   // 归一化空白
   text = text.replace(/\s+/g, " ").replace(/\s([，。；：、！？])/g, "$1").trim();
 

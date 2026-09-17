@@ -15,7 +15,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   // Prisma 7 客户端运行时（含 query compiler WASM）不参与打包，作为服务端外部依赖加载
-  serverExternalPackages: ["@prisma/client"],
+  // duck-duck-scrape / @extractus/article-extractor（linkedom DOM 实现）同样外置，避免打包异常
+  serverExternalPackages: ["@prisma/client", "duck-duck-scrape", "@extractus/article-extractor"],
   async headers() {
     return [
       {

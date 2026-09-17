@@ -40,10 +40,10 @@ export function Topbar() {
   }, [menuOpen]);
 
   const handleLogout = async () => {
-    // 撤销本地会话后，整页跳 identity 登出（无 identity 时回登录页）
+    // 撤销本地会话后，整页跳 identity 登出；identity 不可用时直接落「已退出」态
     const json = await apiFetch<{ logoutUrl: string | null }>("/api/auth/logout", { method: "POST" });
     const logoutUrl = json.ok ? json.data.logoutUrl : null;
-    window.location.assign(logoutUrl ?? "/login");
+    window.location.assign(logoutUrl ?? "/login?signedOut=1");
   };
 
   return (

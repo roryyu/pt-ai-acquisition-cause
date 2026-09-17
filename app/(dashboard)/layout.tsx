@@ -1,3 +1,4 @@
+import { SessionWatch } from "./session-watch";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 
@@ -8,6 +9,7 @@ export default function DashboardLayout({
 }>) {
   return (
     <div className="min-h-screen" style={{ background: "var(--paper)" }}>
+      <SessionWatch />
       <Sidebar />
       <div className="ml-[238px] flex min-h-screen flex-col transition-all duration-300">
         <Topbar />

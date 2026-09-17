@@ -55,7 +55,10 @@ const SEARCH_ROWS = [
 function mockOperatorsHappyPath() {
   runOperatorMock.mockImplementation(async (id: string) => {
     if (id === "search") return okResult(SEARCH_ROWS, ["title", "url", "snippet"]);
-    if (id === "extract") return okResult([{ point: "要点一" }, { point: "要点二" }], ["point"]);
+    if (id === "extract") return okResult([
+      { point: "要点一", quote: "2026 年 6 月，东南亚样本渠道 CPI 为 2 美元。" },
+      { point: "要点二", quote: "统计仅包含 Android，不代表全部市场。" },
+    ], ["point", "quote"]);
     if (id === "compare") return okResult([{ comparison: "共识：X；分歧：Y；置信度：中" }], ["comparison"]);
     return failResult(`未知算子 ${id}`);
   });
@@ -81,12 +84,13 @@ beforeEach(() => {
   mockGateway();
 });
 
-async function run() {
+async function run(depth: "standard" | "deep" = "standard") {
   const events: AgentEvent[] = [];
   const states: string[] = [];
   const result = await runDeepResearch({
     questionId: "question_test",
     question: "测试研究问题",
+    depth,
     sink: (event) => events.push(event),
     onStateChange: (state) => {
       states.push(state);
@@ -171,5 +175,59 @@ describe("深度研究算子化链路", () => {
     const userMsg = streamCall?.[0]?.find((m) => m.role === "user")?.content ?? "";
     expect(userMsg).not.toContain("多源比对结论");
     expect(result.report).toBe("# 研究报告\n正文内容");
+  });
+
+  // 长摘要不再被误判为「已深读」：旧逻辑用 text.length>300 跳过 ExtractOp，
+  // 这里长摘要来源仍会尝试深读，失败后按去重结果补足下一来源。
+  it("长摘要仍深读；锚点重复归一后不占额度；深读失败补足下一来源", async () => {
+    const rows = [
+      { title: "来源一", url: "https://a.example.com/1#intro", snippet: "长摘要".repeat(200) },
+      { title: "来源一重复", url: "https://a.example.com/1#details", snippet: "重复" },
+      SEARCH_ROWS[1]!,
+      { title: "来源三", url: "https://c.example.com/3", snippet: "摘要三" },
+    ];
+    runOperatorMock.mockImplementation(async (id, input) => {
+      if (id === "search") return okResult(rows, ["title", "url", "snippet"]);
+      if (id === "extract") {
+        // 归一后 a.example.com/1 深读失败，b、c 成功
+        if ((input as { url: string }).url === "https://a.example.com/1") return failResult("抓取失败");
+        return okResult([{ point: "要点", quote: "原文中实际提供的事实与限定条件。" }], ["point", "quote"]);
+      }
+      return failResult("跳过比对");
+    });
+    const { result } = await run();
+    for (const sub of result.subQuestions) {
+      const urls = runOperatorMock.mock.calls
+        .filter(([id, input]) => id === "extract" && (input as { focus: string }).focus === sub.question)
+        .map(([, input]) => (input as { url: string }).url);
+      // 锚点重复的 a.example.com/1#details 被归一去重，未额外占用深读额度
+      expect(urls).toEqual(["https://a.example.com/1", "https://b.example.com/2", "https://c.example.com/3"]);
+      // a/1 深读失败保留为未核对摘要，b/2、c/3 成功保留为正文摘录
+      expect(sub.evidence?.filter((m) => m.kind === "page_excerpt")).toHaveLength(2);
+      expect(sub.evidence?.find((m) => m.no === 1)?.kind).toBe("search_snippet");
+    }
+    // 三个不同 URL 各登记一次引用（锚点重复不额外计数）
+    expect(result.citations).toHaveLength(3);
+  });
+
+  // 抽取只返回模型改写要点、无原文 quote 时不算深读成功，补抓次数有硬上限（deepReadCount*2）
+  it.each(["standard", "deep"] as const)("%s：无原文摘录不算深读成功，补抓次数封顶", async (depth) => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({ title: `来源${i}`, url: `https://a.example.com/${i}`, snippet: "摘要" }));
+    runOperatorMock.mockImplementation(async (id) => {
+      if (id === "search") return okResult(rows, ["title", "url", "snippet"]);
+      if (id === "extract") return okResult([{ point: "只有模型改写，无原文" }], ["point"]);
+      return failResult("跳过比对");
+    });
+    const { result } = await run(depth);
+    const deepReadCount = depth === "deep" ? 3 : 2;
+    const cap = deepReadCount * 2; // 每子问题最多尝试页数
+    for (const sub of result.subQuestions) {
+      const calls = runOperatorMock.mock.calls.filter(
+        ([id, input]) => id === "extract" && (input as { focus: string }).focus === sub.question,
+      );
+      expect(calls).toHaveLength(cap);
+      // 全程无 page_excerpt 证据（quote 缺失），子问题仍完成但不产出正文摘录
+      expect(sub.evidence?.filter((m) => m.kind === "page_excerpt")).toHaveLength(0);
+    }
   });
 });

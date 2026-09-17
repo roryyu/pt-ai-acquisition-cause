@@ -48,9 +48,10 @@
 │   connectors/ PG / API / MCP / Web 数据源连接器           │
 │   insights/   洞察画布服务（快照 / 绑定 / 抽取）          │
 │   delivery/   邮件 / 图片投递 + 定时调度                  │
+│   auth/       OIDC BFF（oidc / access-client / session）  │
 │   model-gateway.ts  统一模型网关（主备降级）              │
 ├─────────────────────────────────────────────────────────┤
-│ 数据层  prisma/schema.prisma（14 个模型，cause schema）   │
+│ 数据层  prisma/schema.prisma（16 个模型，cause schema）   │
 │         PostgreSQL + pgvector / Redis（预留）             │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -61,8 +62,10 @@
 2. **算子优先**——标准分析动作先调算子（`runOperator`），算子无法表达时退回 SQL
 3. **Schema 优先**——所有外部输入 Zod 校验，fail fast
 4. **安全默认**——响应附加安全头，SQL 只读白名单，标识符净化
-5. **SSE 流式**——问答 / 研究全程事件推送，前端完整还原 Agent 执行过程
-6. **中文注释**——所有代码注释使用中文
+5. **身份不落前端**——OIDC BFF 模式：ID Token 只留服务端，浏览器仅持 httpOnly 不透明会话
+   cookie；授权由 Access 实时判定（登录期 Entry Gate + 请求期 principal 复核，fail-closed）
+6. **SSE 流式**——问答 / 研究全程事件推送，前端完整还原 Agent 执行过程
+7. **中文注释**——所有代码注释使用中文
 
 ## 目录结构
 
@@ -75,19 +78,21 @@ pt-ai-acquisition-cause/
 │   │   ├── insights/         # 洞察画布（列表 / 详情 / 画布编辑器）
 │   │   ├── datasources/      # 数据源管理
 │   │   ├── semantic/         # 语义层管理
-│   │   └── operators/        # 算子管理
+│   │   ├── operators/        # 算子管理
+│   │   └── session-watch.tsx # 会话活性监测（失效即重新登录）
 │   ├── api/v1/               # REST API（ask / research / insights / datasources /
 │   │                         #   metrics / semantic / operators / schedules / dashboard）
-│   └── login/                # 登录页（开发桩）
+│   ├── api/auth/             # OIDC BFF 端点（login / callback / logout / session）
+│   └── login/                # 登录页（授权状态机：已登录 / 自动发起 / 已登出 / 授权失败）
 ├── lib/
 │   ├── server/               # 服务端核心（agents / connectors / operators /
-│   │                         #   semantic / insights / delivery + 模型网关 / SSE / 调度器）
+│   │                         #   semantic / insights / delivery / auth + 模型网关 / SSE / 调度器）
 │   ├── db/                   # Prisma 客户端单例与生成代码
 │   └── env.ts                # 环境变量 Zod 校验
 ├── components/               # AgentTimeline / MarkdownView / ChartRenderer /
 │                             #   DataTable / 画布组件
 ├── hooks/use-agent-stream.ts # Agent SSE 流消费 Hook
-├── prisma/schema.prisma      # 数据模型（14 个模型）
+├── prisma/schema.prisma      # 数据模型（16 个模型，含 AuthSession / OidcTransaction）
 ├── scripts/                  # 冒烟测试 / 数据种子 / 迁移修复等运维脚本
 ├── tests/                    # Vitest 单元测试
 └── doc/                      # 设计文档（design.md / codewiki.md / 开发进度等）
@@ -100,8 +105,14 @@ pt-ai-acquisition-cause/
 - Node.js 24.7.0（nvm 管理）
 - Docker（本地跑 PostgreSQL + Redis）
 - 一个 OpenAI 兼容的模型 API（BASE_URL / API_KEY / 模型名）
-- 鉴权依赖 PT AI Access 平台（identity :8094 + access-app :4300）：本地调试用同级目录的
-  `pt-access` 轻量模拟器代替完整三容器环境（见 doc/鉴权接入PT-AI-Access设计.md）
+- 鉴权依赖 PT AI Access 平台（identity :8094 + access-app :4300），二选一：
+  - **真实环境**：同级目录 `pt-ai-platform-access`（Keycloak + access-app + PostgreSQL），
+    按其 `no-docker-install.md` 第一~九步启动；其中第七/八步（注册 `pt-ai-cause` 客户端、
+    添加 `cause` 应用目录与 entitlement）是 cause 能登录的前提
+  - **轻量模拟器**：同级目录 `pt-access`（`node server.mjs`，零依赖单文件），
+    用于快速验证链路，改 `users.json` 即可热模拟停用/撤权
+  - 两者的 `.env` 取值一致（client id/secret、内部密钥、entryId 均为同一套本地默认值），
+    切换环境无需改 cause 配置；详见 doc/鉴权接入PT-AI-Access设计.md
 
 ### 步骤
 
@@ -113,10 +124,11 @@ npm install
 cp .env.example .env
 # 编辑 .env：至少填写 MODEL_GATEWAY_BASE_URL / MODEL_GATEWAY_API_KEY /
 # MODEL_GATEWAY_DEFAULT_MODEL / DATABASE_URL；
-# OIDC_* / ACCESS_* 默认值即对接本地 pt-access 模拟器，通常无需改动
+# OIDC_* / ACCESS_* 默认值同时适配本地 pt-access 模拟器与 pt-ai-platform-access 真实环境
 
-# 3. 启动 Access 模拟器（另开终端，保持运行）
-node ../pt-access/server.mjs   # identity :8094 + access-app :4300
+# 3. 启动 Access（另开终端，保持运行）——二选一
+bash ../pt-ai-platform-access/start-access.sh   # 真实环境（需先起 Keycloak :8094）
+node ../pt-access/server.mjs                    # 或轻量模拟器（自带 identity :8094 + access :4300）
 
 # 4. 启动本地依赖并运行开发服务器
 npm run local:up        # = docker compose up -d && npm run dev
@@ -128,7 +140,8 @@ npx tsx scripts/seed-demo-data.ts                 # 经营指标 / 投放数据�
 npx tsx scripts/seed-acquisition-data.ts          # 买量渠道 / 计划种子
 npx tsx scripts/agent-smoke.ts                    # 模型网关连通性验证
 
-# 6. 打开 http://localhost:3100 → 「使用 PT AI 账号登录」
+# 6. 打开 http://localhost:3100 → 未登录会自动跳到 Access 统一认证页
+#    真实环境账号：Access 平台已开通且有 cause entitlement 的账号（如本地 bootstrap 的管理员）
 #    模拟器账号：dev / dev-password（有 cause 权限）；viewer / viewer-password（无权限，测 403）
 ```
 
