@@ -34,3 +34,6 @@ backups/
 
 # 服务器本地 compose 覆盖（deploy.md 在生产机生成，路径为该机专用）
 docker-compose.override.yml
+
+# 发布打包产物（scripts/pack-release.sh 输出，不入库）
+dist/

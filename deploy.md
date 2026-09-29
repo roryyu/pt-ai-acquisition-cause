@@ -10,7 +10,7 @@
 
 ## 0. 本次仓库变更清单（先看，再执行步骤 0）
 
-部署所需的文件已写入本地仓库，**必须先完成步骤 0 推送到 GitHub，服务器才有代码可克隆**：
+部署所需的文件已写入本地仓库，**步骤 0 的基线迁移生成是硬性前提**；git 推送 GitHub 为可选——服务器到 GitHub 拉取缓慢，代码分发主走步骤 1C 压缩包通道，GitHub 仅作版本管理与异地备份：
 
 | 文件 | 状态 | 作用 |
 | --- | --- | --- |
@@ -20,6 +20,7 @@
 | `docker-compose.yml` | 修改 | postgres 凭据变量化（默认值不变，本地 `local:up` 行为不变）+ 新增 `app` 服务（profile 隔离） |
 | `.gitignore` | 修改 | 忽略服务器本地的 `docker-compose.override.yml`（部署时在服务器生成，不入库） |
 | `deploy.md` | 新增 | 本文档 |
+| `scripts/pack-release.sh` | 新增 | 本地发布打包：产出 `dist/cause-release-<版本>.tar.gz`（步骤 1C 首次分发与 §4.1 发版共用） |
 | `prisma/migrations/0_init/` + `migration_lock.toml` | 步骤 0 生成 | **基线迁移**（仓库此前无迁移历史，生产首次建表用 `migrate deploy`） |
 
 设计决策摘要（详见各文件注释）：
@@ -62,8 +63,8 @@
 | 条件 | 状态 |
 | --- | --- |
 | install.md §3/§4 全部通过（docker/compose/git/jq/目录/swap/日志轮转） | ✅ 已确认（2026-09-29） |
-| GitHub 仓库 `roryyu/pt-ai-acquisition-cause` 已创建（**建议 Private**） | ⬜ 你先在 GitHub 网页建好空仓库（不要勾选初始化 README） |
-| 步骤 0 完成推送（含基线迁移与部署文件） | ⬜ 执行步骤 0 |
+| GitHub 仓库 `roryyu/pt-ai-acquisition-cause`（**可选**，版本管理与备份用） | ⬜ 服务器拉取 GitHub 缓慢，代码分发走步骤 1C 压缩包；push 仍建议完成（追溯与回滚依据） |
+| 步骤 0 完成（**基线迁移生成必须**；git 推送可选，见 0.4 说明） | ⬜ 执行步骤 0 |
 | ALB / 目标组 / 安全组信息（prepare.md §6.11 遗留） | ⬜ 步骤 8 前从控制台确认 |
 | 模型网关 / OIDC / Access / Adjust 凭据 | ⬜ 可后补（步骤 9），不阻塞本次部署 |
 
@@ -112,10 +113,27 @@ git push -u origin main
 
 > 若 commit 报 `Please tell me who you are`：先执行
 > `git config --global user.name "roryyu"` 与 `git config --global user.email "<你的GitHub邮箱>"` 再 commit。
+>
+> GitHub 推送受阻时（网络等原因）：完成 0.1–0.3 即可直接进入步骤 1C 压缩包分发，0.4 之后再补做不影响部署。
 
-### 步骤 1（服务器）：克隆代码
+### 步骤 1（服务器）：获取代码（1C 压缩包 / 1A HTTPS / 1B deploy key 三选一）
 
-私有仓库（推荐）走 1B（deploy key 只读）；若仓库为 Public 可直接走 1A。
+**推荐 1C（压缩包分发）**：服务器到 GitHub 实测拉取缓慢，改走「本地打包 → JumpServer 文件上传 → 服务器解压」，完全不依赖 GitHub 网络。
+
+```bash
+# ── 1C-1（本地 Mac）：打包（脚本会打印产物路径、大小与 sha256）──
+cd /Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause
+bash scripts/pack-release.sh
+
+# 1C-2（网页操作）JumpServer 文件管理：上传 dist/cause-release-<版本>.tar.gz 到 /home/ec2-user/
+
+# 1C-3（服务器）：校验完整性一致后解压
+sha256sum ~/cause-release-<版本>.tar.gz
+mkdir -p /srv/cause/app
+tar -xzf ~/cause-release-<版本>.tar.gz -C /srv/cause/app
+```
+
+> 1C 分发的目录里没有 `.git`（无 git log，属正常）；包内含 `RELEASE-INFO` 记录版本与打包时间。压缩包已排除 `.env`/`node_modules`/`.next`/`doc` 等本地资料，并补齐三个运行时目录骨架。
 
 ```bash
 # ── 1A：公开仓库（HTTPS，无需凭据）──
@@ -141,13 +159,14 @@ git clone git@github.com:roryyu/pt-ai-acquisition-cause.git /srv/cause/app
 ```
 
 ```bash
-# 1.2 克隆后核对（两个方式都要执行）
+# 1.2 分发后核对（三种方式都要执行；git log 仅 1A/1B 带 .git 时有输出）
 cd /srv/cause/app
-git log --oneline -3
+git log --oneline -3 2>/dev/null || echo "(压缩包分发，无 .git，属正常)"
+cat RELEASE-INFO
 ls Dockerfile .dockerignore docker-compose.yml prisma/migrations/0_init/migration.sql app/api/health/route.ts
 ```
 
-预期：`git log` 显示步骤 0 的提交；`ls` 列出全部 6 个文件，无报错。
+预期：`ls` 列出全部文件无报错；`prisma/migrations/0_init/migration.sql` 必须存在（缺失说明本地未执行步骤 0.1–0.2）；1C 分发时 `RELEASE-INFO` 显示版本与打包时间。
 
 ### 步骤 2（服务器）：生成生产 .env
 
@@ -325,6 +344,8 @@ curl -s https://cause.pmdevops.com/api/health | jq .
 
 ### 步骤 9（凭据到位后）：更新 .env 并重启
 
+> Access 凭据的**申请清单、更新前预检与逐项验证**见 **deploy-update.md**（本步骤的完整展开版，含要向管理员反向登记的回调地址等关键项）。
+
 管理员提供凭据后按下表改 `/srv/cause/app/.env`（`vim .env`，取消注释/替换占位值），然后 `docker compose --profile app up -d`（env 变更会自动重建容器），再用 `docker compose --profile app logs app --tail 20` 确认启动正常。
 
 | 管理员提供 | .env 行 |
@@ -339,17 +360,28 @@ curl -s https://cause.pmdevops.com/api/health | jq .
 
 ## 4. 日常更新与回滚
 
-### 4.1 常规发版（本地 push 后）
+### 4.1 常规发版（本地改码后）
 
 ```bash
+# ── 本地 Mac：重新打包并上传（同步骤 1C）──
+bash scripts/pack-release.sh
+# JumpServer 文件管理上传 dist/cause-release-<版本>.tar.gz 到 /home/ec2-user/
+```
+
+```bash
+# ── 服务器：解压覆盖 → 构建 → 迁移 → 重启 ──
 cd /srv/cause/app
 docker tag cause-app:latest cause-app:backup-$(date +%Y%m%d-%H%M)   # 留回滚镜像
-git pull
+# 保留 .env 与 docker-compose.override.yml，清掉其余旧文件（避免改名/删除的文件残留）后解压
+find . -mindepth 1 -maxdepth 1 ! -name '.env' ! -name 'docker-compose.override.yml' -exec rm -rf {} +
+tar -xzf ~/cause-release-<版本>.tar.gz -C /srv/cause/app
 docker compose --profile app build 2>&1 | tee /tmp/cause-build.log | tail -5
 docker compose --profile app run --rm app npx prisma migrate deploy  # 新迁移只在此处应用
 docker compose --profile app up -d
 docker compose --profile app ps
 ```
+
+> 若该机曾用 1A/1B 分发且 GitHub 已恢复可达，可用 `git pull` 替代「打包→上传→解压」三步。
 
 ### 4.2 回滚
 
