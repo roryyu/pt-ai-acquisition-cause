@@ -1,8 +1,51 @@
 "use client";
 
-import { Bell, Search, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bell, LogOut, Search, User } from "lucide-react";
+import { apiFetch } from "@/lib/api-fetch";
+
+interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 export function Topbar() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 拉取当前登录身份（未登录时 apiFetch 已统一 401 → 跳登录，此处无需处理）
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<SessionUser>("/api/auth/session").then((json) => {
+      if (!cancelled && json.ok) setUser(json.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 点击面板外关闭下拉
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [menuOpen]);
+
+  const handleLogout = async () => {
+    // 撤销本地会话后，整页跳 identity 登出；identity 不可用时直接落「已退出」态
+    const json = await apiFetch<{ logoutUrl: string | null }>("/api/auth/logout", { method: "POST" });
+    const logoutUrl = json.ok ? json.data.logoutUrl : null;
+    window.location.assign(logoutUrl ?? "/login?signedOut=1");
+  };
+
   return (
     <header
       className="sticky top-0 z-30 flex h-16 items-center justify-between border-b px-6 backdrop-blur-md"
@@ -43,11 +86,62 @@ export function Topbar() {
             style={{ background: "var(--danger)" }}
           />
         </button>
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
-          style={{ background: "var(--purple-pale)", color: "var(--purple)" }}
-        >
-          <User size={16} />
+
+        {/* 用户区：头像 + 下拉（身份来自 /api/auth/session） */}
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            className="flex items-center gap-2 rounded-full p-0.5 pr-2 transition-colors hover:bg-black/5"
+            aria-label="用户菜单"
+          >
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
+              style={{ background: "var(--purple-pale)", color: "var(--purple)" }}
+            >
+              {user ? user.name.slice(0, 1) : <User size={16} />}
+            </span>
+            {user && (
+              <span className="max-w-24 truncate text-sm" style={{ color: "var(--ink)" }}>
+                {user.name}
+              </span>
+            )}
+          </button>
+
+          {menuOpen && user && (
+            <div
+              className="absolute right-0 top-full mt-2 w-56 rounded-[10px] border p-1.5"
+              style={{
+                borderColor: "var(--line)",
+                background: "var(--surface)",
+                boxShadow: "0 8px 32px rgb(28 18 48 / 12%)",
+              }}
+            >
+              <div className="px-2.5 py-2">
+                <div className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                  {user.name}
+                </div>
+                {user.email && (
+                  <div className="mt-0.5 truncate text-xs" style={{ color: "var(--muted)" }}>
+                    {user.email}
+                  </div>
+                )}
+                <div className="mt-0.5 text-xs" style={{ color: "var(--muted)" }}>
+                  角色：{user.role}
+                </div>
+              </div>
+              <div className="my-1 border-t" style={{ borderColor: "var(--line)" }} />
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-sm transition-colors hover:bg-black/5"
+                style={{ color: "var(--danger)" }}
+              >
+                <LogOut size={15} />
+                退出登录
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

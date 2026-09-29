@@ -1,0 +1,30 @@
+# 依赖与构建产物（镜像内由 npm ci / next build 重新生成，避免宿主平台产物混入）
+node_modules
+.next
+out
+coverage
+lib/db/generated
+tsconfig.tsbuildinfo
+
+# 密钥与环境配置（严禁进入镜像层，运行时经 compose env_file 注入）
+.env
+.env.local
+.env*.local
+
+# 运行时落盘目录（服务器经 bind mount 挂宿主目录，镜像内保持空骨架）
+.deliveries
+public/exports
+
+# 版本控制与非运行时资料
+.git
+doc
+backups
+tests
+
+# Agent / 编辑器工作区
+.qoder
+.claude
+.windsurf
+.agents
+.DS_Store
+*.log

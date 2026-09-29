@@ -18,6 +18,15 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/env", () => ({
   env: { DATABASE_URL: "postgresql://localhost:5432/test?schema=cause" },
 }));
+// 鉴权打桩：BFF 会话链路不在本测试范围，route 层只验证业务行为
+vi.mock("@/lib/server/auth/session", () => ({
+  getSessionActor: vi.fn().mockResolvedValue({
+    id: "user_test",
+    name: "测试用户",
+    email: "test@example.com",
+    role: "admin",
+  }),
+}));
 
 import { POST } from "@/app/api/v1/semantic/models/route";
 import { PUT, DELETE } from "@/app/api/v1/semantic/models/[id]/route";

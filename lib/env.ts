@@ -9,9 +9,23 @@ const serverEnvSchema = z.object({
   // ---------- 应用 ----------
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
-  APP_URL: z.string().url().default("http://localhost:3000"),
+  APP_URL: z.string().url().default("http://localhost:3100"),
   // 会话签名密钥，至少 32 字符
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET 至少 32 字符"),
+
+  // ---------- PT AI Access 统一认证（OIDC BFF，见 doc/鉴权接入PT-AI-Access设计.md） ----------
+  // 默认值对应本地 pt-access 模拟器；接真实 Access 环境时必须显式覆盖
+  /** identity 容器（Keycloak）realm 地址，用于 discovery/JWKS/授权端点 */
+  OIDC_ISSUER: z.string().url().default("http://localhost:8094/realms/pt-ai"),
+  OIDC_CLIENT_ID: z.string().default("pt-ai-cause"),
+  OIDC_CLIENT_SECRET: z.string().default("pt-ai-cause-oidc-local-only"),
+  /** access-app 容器内部接口基址（/internal/session-activated、/internal/principal） */
+  ACCESS_INTERNAL_BASE_URL: z.string().url().default("http://localhost:4300"),
+  ACCESS_INTERNAL_SECRET: z.string().default("pt-ai-access-internal-local-only"),
+  /** cause 在 Access entryCatalog 中的入口 ID */
+  ACCESS_ENTRY_ID: z.string().default("cause"),
+  /** principal 请求期缓存秒数（fail-closed） */
+  ACCESS_PRINCIPAL_CACHE_SECONDS: z.coerce.number().int().nonnegative().default(60),
 
   // ---------- 统一模型网关（所有 AI 调用的唯一入口，design.md 12.1） ----------
   MODEL_GATEWAY_BASE_URL: z.string().url(),

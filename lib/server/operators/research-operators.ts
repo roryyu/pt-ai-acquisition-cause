@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { chatCompletion } from "@/lib/server/model-gateway";
+import { PAGE_EXTRACT_PROMPT } from "@/lib/server/agents/prompts";
 import { webSearch, fetchPage, type SearchResult } from "@/lib/server/connectors/web";
 import type { OperatorMeta, OperatorRunResult } from "./data-operators";
 
@@ -80,28 +81,38 @@ export async function runExtractOp(input: z.infer<typeof ExtractInput>): Promise
   const start = Date.now();
   try {
     const page = await fetchPage(input.url, 8000);
-    const prompt = `从以下网页内容中抽取关键信息${input.focus ? `，重点关注：${input.focus}` : ""}。
-
-标题：${page.title}
-正文：
-${page.text}
-
-输出要求：
-1. 每条要点一行，格式：- [要点内容]（含具体数据/时间则必须保留）
-2. 最多 8 条，按重要性排序
-3. 仅输出要点，不要前言后语`;
-
+    if (!page.text.trim()) throw new Error("网页正文为空");
     const content = await chatCompletion(
-      [{ role: "user", content: prompt }],
-      { temperature: 0.1, maxTokens: 1024 },
+      [
+        { role: "system", content: PAGE_EXTRACT_PROMPT },
+        { role: "user", content: `关注问题：${input.focus ?? "关键事实、数据与时间"}\n标题：${page.title}\n正文：\n${page.text}` },
+      ],
+      { temperature: 0.1, maxTokens: 3072 },
     );
-    const points = content.split("\n").map((l) => l.trim()).filter((l) => /^[-•]/.test(l)).map((l) => l.replace(/^[-•]\s*/, ""));
+    const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = z.object({ points: z.array(z.unknown()) }).parse(JSON.parse(json));
+    const pointSchema = z.object({
+      point: z.string().trim().min(1).max(600),
+      quote: z.string().trim().min(1).max(600),
+    });
+    const rows: { point: string; quote: string }[] = [];
+    for (const item of parsed.points) {
+      const result = pointSchema.safeParse(item);
+      if (!result.success) continue;
+      const { point, quote } = result.data;
+      const start = page.text.indexOf(quote);
+      if (start < 0 || rows.some((r) => r.quote.includes(quote))) continue;
+      // 从原文回切并保留相邻上下文，避免模型改写摘录或丢掉日期、口径限定。
+      rows.push({ point, quote: page.text.slice(Math.max(0, start - 120), start + quote.length + 120) });
+      if (rows.length >= 4) break;
+    }
+    if (rows.length === 0) throw new Error("未抽取到可在正文中核对的相关摘录");
     return {
       ok: true,
       operatorId: "extract",
-      columns: ["point"],
-      rows: points.map((p) => ({ point: p })),
-      rowCount: points.length,
+      columns: ["point", "quote"],
+      rows,
+      rowCount: rows.length,
       elapsedMs: Date.now() - start,
       notes: [`来源：${page.title} (${page.url})，正文 ${page.wordCount} 字`],
     };

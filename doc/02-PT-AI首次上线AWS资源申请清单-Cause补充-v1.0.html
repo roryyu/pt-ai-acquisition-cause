@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PT AI 首次上线 AWS 资源申请清单 · Cause 补充 v1.0（同机部署、正式域名与无 S3 修订）</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+body { font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; color: #172b4d; font-size: 10pt; line-height: 1.55; max-width: 1000px; margin: 32px auto; }
+h1 { font-size: 24pt; line-height: 1.3; color: #123b63; }
+h2 { font-size: 16pt; margin-top: 26px; padding-bottom: 6px; border-bottom: 2px solid #dbe6ef; page-break-after: avoid; }
+h3 { font-size: 12pt; margin-top: 18px; page-break-after: avoid; }
+p, li { margin-top: 5px; margin-bottom: 5px; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 9pt; table-layout: auto; }
+th, td { border: 1px solid #b8c9d8; padding: 7px 8px; vertical-align: top; overflow-wrap: anywhere; }
+th { background: #eaf1f7; color: #123b63; text-align: left; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+code { font-family: Menlo, Consolas, monospace; font-size: 9pt; overflow-wrap: anywhere; }
+.note { background: #f1f5f9; border-left: 4px solid #477699; padding: 10px 12px; }
+.warning { background: #fff5e8; border-left: 4px solid #b77722; padding: 10px 12px; }
+.meta { color: #52677b; }
+@media print { body { margin: 0; max-width: none; } }
+</style>
+</head>
+<body>
+<p class="meta">PT AI · AWS PRODUCTION · CAUSE ADDENDUM</p>
+<h1>PT AI 首次上线 AWS 资源申请清单<br>Cause 资源与配置补充</h1>
+<table>
+<tr><th>项目</th><td>pt-ai-acquisition-cause（归因分析应用）</td><th>补充版本</th><td>v1.0（同机部署、正式域名与无 S3 修订）</td></tr>
+<tr><th>基准文件</th><td colspan="3">01-PT-AI首次上线AWS资源申请清单-v1.0.docx（2026-08-24）</td></tr>
+<tr><th>核对基线</th><td>Cause Git 8069669</td><th>核对日期</th><td>2026-09-23</td></tr>
+<tr><th>主要读者</th><td colspan="3">运维、云平台、DBA、Foundation / Access 管理员、Cause 研发负责人</td></tr>
+<tr><th>状态</th><td colspan="3">资源申请与上线准备建议稿；尚未申请资源、部署服务或完成生产联调。</td></tr>
+</table>
+<p class="note">本补充与原 v1.0 配套使用，不覆盖原文件。已确认：Cause 独占一台 EC2，PostgreSQL 也部署在该机；正式入口为 https://cause.pmdevops.com/；Cause 不需要 S3 Bucket，必须访问 Foundation Gateway 和 Access 统一认证。应用与 PostgreSQL 推荐分别运行在该机的独立 Docker 容器中，不使用共享 RDS；本版移除 Cause 产物 Bucket、共享备份 Bucket 使用和 S3 权限，文件改为加密 EBS 持久化。除明确调整外，原有私网、加密、审批、备份与最小权限要求继续有效。4 vCPU / 16 GiB、200 GiB 是首期低并发预算起点，不是实测容量承诺；目标 Region 的规格、价格及配额由云平台确认。</p>
+
+<h2>1. 部署结论与申请原则</h2>
+<ul>
+<li><strong>新增 1 台 Cause 专用 EC2，同时部署 Cause 应用与 PostgreSQL 17</strong>，与 AI Core、Platform 同 VPC 私网部署；运行一个 Web/API 进程、一个数据库实例及受控单次同步 / 备份作业，不部署模型推理或 GPU 服务。</li>
+<li><strong>外部必需依赖为 Foundation Gateway 和 Access 统一认证。</strong>Access 认证链路包含 Identity 的 OIDC 登录及 Access Internal API 的入口授权 / 会话复核，二者均须可达。复用现有 Internal ALB、告警通道和管理通道，不在 Cause 主机重复部署 Foundation 或 Access。原 RDS 的实例规格、容量、五个逻辑库及安全组访问范围保持不变。</li>
+<li>Cause 与 Creative / Portal 是平级应用。Creative / Portal 不作为 Cause 的启动依赖，不新增其数据库访问权限；Portal 仅需登记 Cause 入口链接及可见权限。</li>
+<li>模型调用消耗 Foundation 配额；分析查询消耗 Cause 本机 PostgreSQL 的 CPU、内存与磁盘 I/O。Cause 应用与数据库不再与 Creative / Portal 争抢数据库资源，但二者共享一台 EC2 的容量和故障域；整机故障会同时中断 Web 与数据库服务。</li>
+<li>正式持久化目标：业务及分析数据进入同机 PostgreSQL，PGDATA、导出图片及图谱分别落加密 EBS 数据盘的隔离目录；备份采用本地一致性逻辑备份 + 加密 EBS 快照建议方案。Cause 不新增或复用 S3 Bucket，不要求 S3 适配；原三个 Bucket 继续服务原应用，本次不调整。文件授权下载、容量与恢复验收仍必须完成。</li>
+<li>当前按<strong>单 Web 进程、单调度执行器</strong>部署。单实例仍需限制并发图谱写入；在解决任务锁、文件状态和恢复机制前，不开启多副本、PM2 cluster 或 Auto Scaling。</li>
+</ul>
+<p><strong>原第 10 节调整：</strong>仍不申请第二环境、高可用副本或第二台 Cause 数据库服务器。本次新增的是 Cause 应用与数据库合一节点，不是原有 AI Core / Platform 的第二套；不再保留 Cause 与 AI Core 合部署的备选方案。全平台为 3 台 EC2 + 原有 1 个 RDS，其中 Cause 使用新增 EC2 上的自管 PostgreSQL。</p>
+
+<h2>2. 相对原清单的资源增量</h2>
+<table>
+<thead><tr><th>资源</th><th>原清单</th><th>Cause 增量 / 调整</th><th>补充后目标</th></tr></thead>
+<tbody>
+<tr><td>EC2</td><td>AI Core + Platform，共 2 台</td><td>新增 Cause：m7g.xlarge，4 vCPU / 16 GiB，ARM64；同时运行应用与 PostgreSQL</td><td>3 台；原两台规格不因 Cause 调整</td></tr>
+<tr><td>Cause EBS</td><td>无</td><td>新增 200 GiB gp3，加密；系统盘 50 + 数据盘 150 GiB</td><td>数据盘存 PostgreSQL、正式文件与本地备份；预算须计入备份峰值，不随实例终止自动删除</td></tr>
+<tr><td>Cause EBS 快照</td><td>未列 Cause</td><td>建议每日数据库 / 文件备份成功后生成数据盘加密快照，保留最近 7 天成功恢复点</td><td>独立核算快照费用；不申请客户侧 S3 Bucket，由运维落实自动化与恢复验收</td></tr>
+<tr><td>RDS PostgreSQL</td><td>1 实例；db.t4g.medium；50 GiB，可扩至 200 GiB</td><td>无增量、无扩容、无 Cause 账号或数据库</td><td>保持原申请配置，仅服务原五个逻辑库</td></tr>
+<tr><td>Cause 自管 PostgreSQL</td><td>无</td><td>新增 PG17 实例，安装在 Cause EC2 的独立容器中</td><td>不新增 RDS 或数据库 EC2</td></tr>
+<tr><td>逻辑数据库</td><td>原 RDS 内 5 个</td><td>本机 PostgreSQL 新增 pt_ai_cause，含 cause / data 两个 schema</td><td>全平台业务逻辑库共 6 个：RDS 5 + Cause 本机 1（不含系统库）</td></tr>
+<tr><td>S3 Bucket</td><td>3 个</td><td>Cause 增量为 0；不使用原备份 Bucket，不新增 Prefix 或访问权限</td><td>仍为原 3 个；Cause 不需要 S3 Bucket</td></tr>
+<tr><td>Internal ALB</td><td>1 个，跨两个 AZ</td><td>复用；增加主机路由规则与容量监控</td><td>仍 1 个</td></tr>
+<tr><td>Target Group</td><td>5 个</td><td>新增 Cause，HTTP 3100，instance target</td><td>6 个</td></tr>
+<tr><td>内部域名</td><td>6 个</td><td>新增 cause.pmdevops.com</td><td>7 个；Creative 别名仍为重定向，无独立 TG</td></tr>
+<tr><td>证书</td><td>覆盖原 6 域名</td><td>证书须覆盖 cause.pmdevops.com；可核对现有 *.pmdevops.com 或精确 SAN，否则补充证书并关联监听器</td><td>覆盖全部 7 域名，不固定新增证书数量</td></tr>
+<tr><td>Security Group</td><td>4 个</td><td>新增 Cause SG；扩充 ALB / Core / Platform 精确规则；RDS SG 不变</td><td>5 个；Cause 的 5432 无主机入站规则</td></tr>
+<tr><td>Instance Profile</td><td>2 套</td><td>新增 Cause Profile</td><td>3 套</td></tr>
+<tr><td>Secrets</td><td>2 个主机级 + RDS Managed Secret</td><td>新增 Cause Runtime、Migration、DB Admin 共 3 个 Secret；后两者仅部署 / 数据库运维角色可读</td><td>5 个自管 Secret + 原 RDS Managed Secret；不为 Cause 创建 RDS Managed Secret</td></tr>
+<tr><td>CloudWatch Log Group</td><td>2 组</td><td>新增 /pt-ai/prod/cause，按 Web / PostgreSQL / 同步 / 调度 / 备份 / 部署区分 Stream</td><td>3 组；保留期建议 30 天</td></tr>
+<tr><td>定时执行</td><td>未列 Cause</td><td>Cause 主机 systemd timer：Adjust 每日、到期任务每分钟；均需单实例锁</td><td>不新增 SQS / Redis / EventBridge 硬依赖</td></tr>
+<tr><td>应用注册</td><td>原应用注册</td><td>新增 / 核对 Identity Client、Access cause 入口授权、Foundation 独立调用身份、Portal 入口</td><td>复用平台，独立权限与调用计量</td></tr>
+</tbody>
+</table>
+<p>主机升配理由：数据库由共享 RDS 移入 Cause EC2，原应用专用的 2 vCPU / 8 GiB、100 GiB 预算不再适用。建议以 4 vCPU / 16 GiB、200 GiB 起步，压测同步、分析与 Web 同时运行时的内存 / I/O；高负载时优先扩容本机与数据卷，不把改回 RDS 或新增数据库主机作为本次已批准方案。</p>
+
+<h2>3. Cause EC2 与镜像交付</h2>
+<table>
+<tr><th>配置</th><th>要求</th></tr>
+<tr><td>名称与网络</td><td>pt-ai-prod-cause-01；私有子网，无公网 IP；与依赖服务同 VPC。单机同时承载应用和数据库，不提供跨 AZ 高可用或数据库自动故障切换。</td></tr>
+<tr><td>主机系统</td><td>公司批准的 ARM64 Linux AMI；安装 Docker Engine、Compose v2、AWS CLI、SSM Agent、CloudWatch Agent、jq、zstd；管理走现有 SSM / 堡垒机 / VPN。</td></tr>
+<tr><td>运行方式</td><td>同机以生产 Compose 分别运行 Cause 与 PostgreSQL 17 容器。应用当前是 Next.js 16 + React 19 + Prisma 7，npm start 使用 3100；只运行构建产物并验收监听 0.0.0.0:3100，不得运行 next dev。PostgreSQL 无宿主机端口映射。</td></tr>
+<tr><td>Node.js</td><td>package.json 当前精确声明 24.7.0。采用已批准、验证通过的 Node 24.x 安全补丁版本并固定镜像 digest；若不同于 24.7.0，研发先同步 engines 与锁定策略，不能声称当前声明已是宽版本范围。</td></tr>
+<tr><td>容器预算</td><td>16 GiB 初始划分：PostgreSQL 上限 8 GiB，Web 上限 4 GiB，单次同步作业上限 1 GiB，OS / Agent / 备份峰值余量约 3 GiB。4 vCPU 初始限额可设数据库 2、Web 1.5、同步 0.5，同步与备份错峰；这些上限并非独占预留，须压测并避免 OOM。</td></tr>
+<tr><td>可写目录</td><td>系统盘 50 GiB 存 OS、容器镜像和轮转日志；150 GiB 数据盘挂载 /srv/cause。postgres 子目录映射 PG17 的 /var/lib/postgresql/data；graph、exports、deliveries 分别映射应用图谱、导出与投递目录，backup 存受控数据库 / 文件备份。禁止 Web 挂载 PGDATA 或 backup；正确配置 UID/GID。exports 是正式持久文件，不再按 S3 缓存自动删除。</td></tr>
+<tr><td>数据卷保护</td><td>两块 EBS 均加密；数据盘 DeleteOnTermination=false。开机必须确认数据盘挂载成功后才启动数据库，防止落到系统盘形成空库。监控容量、IOPS、吞吐及 WAL 增长；扩容需完成文件系统扩展，不具备 RDS 存储自动扩容能力。</td></tr>
+<tr><td>镜像构建</td><td>在 CI / 构建机完成依赖安装、Prisma Client 生成、测试及 next build。当前未配置 standalone，须打包完整运行依赖及生成客户端；如选择 standalone，先补配置并验收外置依赖。定时 CLI 用的 tsx、脚本及模块须显式打包，不能被仅生产依赖裁剪误删。</td></tr>
+<tr><td>交付与启动</td><td>沿用离线 OCI 压缩包经 SSH / 批准通道交付，包含应用镜像、固定 PG17 镜像及备份工具、架构 / digest / 校验和、生产 Compose、迁移包和回滚说明；ECR 非前提。无长期 AWS Access Key；凭据由受控启动器注入，数据库管理员凭据不交给 Web。</td></tr>
+<tr><td>架构约束</td><td>默认 linux/arm64；若公司统一采用 x86_64，则按原原则整体选择同级 x86 主机并重建 linux/amd64 镜像。不得在生产依赖跨架构模拟运行。</td></tr>
+</table>
+<p class="warning">仓库现有 docker-compose.yml 虽含 PostgreSQL，但采用开发口令并映射宿主机 5432，不能直接作为同机生产配置。上线前需补 Cause Dockerfile、生产 Compose、加密持久卷、数据库 TLS / 账号、健康检查、资源限额与备份链路；同机部署不等于沿用开发数据库配置。</p>
+
+<h2>4. 网络、安全组与外联</h2>
+<p><strong>核心访问链路：</strong>用户 → https://cause.pmdevops.com/ → Internal ALB → Cause:3100；Cause → Foundation Gateway（Core:8080）；Cause → Access Internal API（Platform:4300），并通过 HTTPS 访问 Access 认证体系的 Identity OIDC 端点。8080 / 4300 沿用原资源清单，最终服务地址由平台管理员交付；不能只放通其中一条就视为认证与模型接入完成。</p>
+<table>
+<thead><tr><th>来源 → 目标</th><th>端口 / 协议</th><th>规则与用途</th></tr></thead>
+<tbody>
+<tr><td>批准的公司内网 / VPN → ALB</td><td>TCP 443 / HTTPS</td><td>沿用用户入口；新增 Cause 域名，不开放公网。</td></tr>
+<tr><td>ALB SG → Cause SG</td><td>TCP 3100 / HTTP</td><td>Cause Web/API 与健康检查；同时放通 ALB 对 Cause 的出站规则。3100 不对公司全网或公网直接开放。</td></tr>
+<tr><td>Cause SG → Core SG</td><td>TCP 8080</td><td>Foundation Gateway；在 Core 入站新增 Cause 来源，保留原 Platform 来源。协议以目标网关实际配置为准；如公司要求服务间 TLS，须增设已批准 TLS 入口并联调。</td></tr>
+<tr><td>Cause SG → Platform SG</td><td>TCP 4300</td><td>Access Internal API；在 Platform 入站新增 Cause 来源，保留原 Core 来源。</td></tr>
+<tr><td>Cause SG → ALB SG</td><td>TCP 443 / HTTPS</td><td>通过正式 pt-identity 域名访问 discovery、token、JWKS；ALB 入站也须允许 Cause SG，否则浏览器能登录不代表服务端能兑换 token。</td></tr>
+<tr><td>Cause 应用 / 作业 → 同机 PostgreSQL</td><td>Docker 专用网络，TCP 5432 / TLS</td><td>通过 Compose 服务名 postgres 连接；数据库不配置 ports 映射、不接入 ALB、不开放 EC2 5432 入站。迁移 / 备份 / 管理经本机受控容器或 SSM 执行；RDS SG 不新增 Cause 来源。</td></tr>
+<tr><td>Cause → AWS 服务</td><td>TCP 443</td><td>Secrets Manager、CloudWatch、SSM 等经现有私有 Endpoint 或 NAT；同步调整 Endpoint policy、路由及接口 Endpoint SG。快照由受控运维自动化调用 EC2 API，若在主机运行须额外验证该 API 的 HTTPS 路径；不为 Cause 业务或备份申请 S3 Endpoint / Bucket 访问规则。</td></tr>
+<tr><td>Cause → Adjust</td><td>TCP 443</td><td>automate.adjust.com；共享获批 NAT / 出网代理。需要来源 IP 白名单时使用 NAT 出口，不给 EC2 分配公网 IP。</td></tr>
+<tr><td>Cause → 搜索引擎 / 批准网页</td><td>TCP 443；80 仅按需批准</td><td>现实现会访问 DuckDuckGo（含 lite/html 子域）、Bing 和被引用网页；仅放通 Adjust 与模型 Provider 不足以支撑深度研究。动态网页目的地走获批出网策略并防 SSRF，不申请无限制内网访问。</td></tr>
+<tr><td>Cause → BI / API / MCP 数据源</td><td>按具体源逐项申请</td><td>BI 用只读数据库账号；MCP 用管理台配置的 proxyUrl / headers，支持 HTTP 流式。不得因为添加连接器就开放对其他五个应用库的访问。</td></tr>
+<tr><td>Cause → SMTP</td><td>公司指定 465 / 587 等</td><td>仅在真实邮件适配完成并批准后开通；当前配置 SMTP 变量不会发送邮件。</td></tr>
+</tbody>
+</table>
+<p>同时检查 DNS、NACL 返回端口、企业 CA 信任及 HTTPS 代理实际兼容性。域名限制由 DNS / 代理 / 防火墙等实现，不能把安全组当域名白名单。未批准外联的功能应在首发范围中关闭或明确不可用；不得绕过管控。无需向用户开放 8080、4300、8094 或 5432。</p>
+
+<h2>5. 同机 PostgreSQL、权限和 TLS</h2>
+<h3>5.1 库与 schema</h3>
+<p>在 Cause EC2 的 PostgreSQL 17 容器内创建 <code>pt_ai_cause</code>，与应用同机但使用独立进程、账号及持久目录。原 RDS 的 pt_ai_access、pt_ai_keycloak、pt_ai_portal、pt_ai_foundation、pt_ai_creative 不变；Cause 不连接这些数据库。</p>
+<table>
+<tr><th>对象</th><th>内容 / 管理方式</th></tr>
+<tr><td>pt_ai_cause.cause</td><td>用户、本地业务角色、OIDC 事务、会话、数据源、指标、语义模型、问答、研究、画布、定时任务等 Prisma 模型；Prisma datasource.schemas 当前仅包含 cause。</td></tr>
+<tr><td>pt_ai_cause.data</td><td>Adjust 与 API 取数形成的分析表；当前在应用中通过原生 SQL 使用，不在 Prisma schema 的管理范围内，必须另纳入版本化迁移。</td></tr>
+<tr><td>pgvector</td><td>原开发环境使用带 pgvector 的 PG17 镜像，但当前 Prisma schema 没有 vector 字段。生产可采用通过安全审核且支持 ARM64 的固定版本 PG17 镜像；若保留 pgvector，固定扩展版本并验证恢复兼容。只有启用向量功能时才由迁移 / DBA 创建 vector 扩展，不另申请向量数据库服务。</td></tr>
+</table>
+<h3>5.2 角色与连接隔离</h3>
+<ul>
+<li>新增 <code>pt_ai_cause_runtime</code> 与 <code>pt_ai_cause_migration</code>。Runtime 仅对本应用库拥有 CONNECT、两个 schema 的 USAGE、所需表 DML / 序列权限；Migration 负责受控 DDL，不给 Web 进程持有。核对未来对象的默认权限与对象所有者。</li>
+<li>PostgreSQL 管理员账号仅用于初始化和批准的运维，不用于应用或同步。默认不允许外部 BI 直连本机数据库；后续确需开放时另批专用 TLS 网络路径和只读角色，仅授权指定 data 表 / 视图。</li>
+<li>审计本机 PostgreSQL 的 PUBLIC 默认权限及 Runtime / Migration 所有权，不授权其他平台数据库，也不复用原 RDS 凭据。数据库使用专用 Docker bridge 后端网络，仅接入应用与受控作业，无宿主机端口映射。数据库备份写本地隔离目录，PG 容器无需 S3 或公网出站；Web 另接受控出网网络以访问 Foundation Gateway、Access 认证及获批业务源。快照 API 与运维身份由受控自动化使用，不交给 Web。</li>
+<li>本机连接预算包含 Prisma 池、每目标库最多 3 连接的 pg 分析池、同步 CLI、迁移和监控，不包含其他五个应用；首期 max_connections 建议 80 并为运维预留连接，须先核对各池总上限。分析查询初始 statement_timeout 30 秒，长迁移另设受控参数；不要虚构应用已有的连接池环境变量。</li>
+<li>自管 PostgreSQL 不继承 RDS 自动备份、PITR、Deletion Protection、自动补丁或托管监控。由 DBA / 运维负责版本升级、备份归档、恢复演练、证书轮换与容量；原 RDS 的这些配置继续服务原有应用。</li>
+</ul>
+<h3>5.3 TLS 与迁移的阻断项</h3>
+<p>即使同机，容器间 TCP 连接仍启用 PostgreSQL TLS 和 <code>sslmode=verify-full</code>。通过公司批准 CA 签发数据库证书，SAN 覆盖服务名 <code>postgres</code>，只读挂载证书 / 私钥并设置严格权限；客户端挂载对应 CA bundle，不再使用 RDS CA。服务端 ssl=on，pg_hba.conf 仅允许指定数据库 / 角色 / 后端网段的 hostssl + scram-sha-256，移除开发 trust 及非 TLS 放行规则。Runtime 示例仅表达参数形态：</p>
+<p><code>postgresql://&lt;runtime-user&gt;:&lt;URL编码密码&gt;@postgres:5432/pt_ai_cause?schema=cause&amp;sslmode=verify-full&amp;sslrootcert=/run/certs/cause-pg-ca.pem</code></p>
+<p>postgres 仅在专用容器网络内解析；迁移、CLI 与连接测试也要加入该网络，不能在应用容器中以 localhost 指代另一容器。禁止 rejectUnauthorized=false 或跳过主机名校验。CA 公钥可分发给客户端，服务器私钥不得挂载到 Web。</p>
+<p class="warning"><strong>必须先修复：</strong>lib/server/connectors/postgres.ts 的 normalizeUrl 当前直接删除连接串全部查询参数，会一并丢弃 sslmode / sslrootcert；分析查询与连接测试不能仅靠上述 URL 满足生产 TLS。需保留 SSL 参数，只移除 Prisma 专用参数，或显式配置 pg SSL。Prisma 与原生 pg 两条链路都要验证：正确 CA 成功、错误 CA / 主机名失败、连接在 pg_stat_ssl 中确为 TLS。</p>
+<p class="warning"><strong>必须先补迁移：</strong>当前 prisma/ 下只有 schema.prisma，未发现 migrations；npm run db:deploy 的存在不代表具备可部署迁移。Adjust / API 落库还会运行 CREATE TABLE / CREATE INDEX，reset 分支可删除表。上线前需版本化管理 cause / data schema、表与索引，拆除生产运行时 DDL，禁止普通同步 reset。迁移进程临时以 Migration Secret 注入 DATABASE_URL，完成后销毁；不得为图省事给 Runtime DDL / DROP 权限。</p>
+
+<h3>5.4 数据库运行参数与生命周期</h3>
+<ul>
+<li>在 PostgreSQL 8 GiB 容器预算内，初始建议 shared_buffers=2GB、effective_cache_size=6GB（优化器估算，不是额外分配）、work_mem=8MB、maintenance_work_mem=256MB；work_mem 按查询算子和并发放大，须结合实际压测。Compose 的 shm_size 建议 1 GiB，不使用默认小共享内存配置。</li>
+<li>PGDATA 独立持久挂载，初始化启用数据校验和；保留 fsync=on、full_page_writes=on、synchronous_commit=on，不能靠关闭持久性换性能。日志设保留与轮转，慢 SQL 采集需脱敏。</li>
+<li>PostgreSQL 先健康，再运行批准的迁移，成功后启动 Web 与 timer。pg_isready 只证明接受连接；应用就绪仍需验证 Runtime 账号、TLS 和所需表结构。应用发布不得重建数据库数据目录或自动执行破坏性初始化。</li>
+<li>PG17 补丁更新先备份、兼容验证、安排停机窗口；跨大版本升级必须有独立 pg_upgrade 或逻辑迁移方案，不能直接换容器标签打开旧 PGDATA。主机重启应正常停止数据库，恢复后验证 WAL 恢复与应用数据。</li>
+</ul>
+
+<h2>6. 本地文件持久化与备份（不使用 S3 Bucket）</h2>
+<p>Cause 的正式文件保存在本机加密 EBS，不再要求接入对象存储。原文档的产物 S3 原则对 Cause 按本次已确认要求调整，其他应用仍遵循原清单；不新增 Cause Bucket，也不占用原备份 Bucket。EBS 快照由 AWS 快照服务管理，不需要申请或操作客户侧 S3 Bucket。</p>
+<table>
+<tr><th>资源 / 路径</th><th>目标要求</th><th>当前状态与边界</th></tr>
+<tr><td>/srv/cause/postgres → PGDATA</td><td>150 GiB 加密数据盘上的数据库目录，包含数据、索引、WAL 与临时文件；保留增长余量。</td><td>不是备份。数据盘不随实例终止自动删除，EC2 终止保护与变更审批同时启用；同 AZ 可重挂，跨 AZ 可由加密快照创建新卷。</td></tr>
+<tr><td>/srv/cause/graph</td><td>映射应用 data/research-graph，保存 knowledge-graph.json，纳入每日备份；RESEARCH_GRAPH_PATH 可覆盖容器路径。</td><td>当前临时文件 + rename；不是并发锁。多任务更新仍需串行化 / 锁定，可由研究记录重建图谱。</td></tr>
+<tr><td>/srv/cause/exports</td><td>映射应用 public/exports，正式持久化 PNG 等导出文件，重建应用容器不丢失；按文档归属、保留期限及引用关系管理。</td><td>当前写本地 PNG，返回 /exports/ 路径；仍需实现文件级授权和受控读取，不能把静态路径等同于鉴权接口。</td></tr>
+<tr><td>/srv/cause/deliveries</td><td>映射应用 .deliveries；仅在验证环境或获批过渡期保存 mock 记录，按敏感数据管理并设置保留期。</td><td>当前不是实际邮件发送记录；不得作为真实投递成功证明。</td></tr>
+<tr><td>/srv/cause/backup</td><td>受控保存数据库逻辑备份、角色 / 权限恢复资料、文件备份与校验清单；禁止 Web 挂载或读取。</td><td>与源数据同盘，仅用于误操作恢复及快照内的已完成备份基线，不能独立防范数据卷丢失。</td></tr>
+<tr><td>Cause 数据盘加密 EBS 快照</td><td>数据库与文件备份成功并落盘后，由受控运维自动化触发；建议每日一次，保留最近 7 天成功恢复点，失败告警。</td><td>不需要 Cause S3 权限；需记录快照 ID、完成状态和有效备份时间，并从新卷验证恢复。快照费用单独核算。</td></tr>
+</table>
+<ul>
+<li>150 GiB 数据盘由数据库、正式文件、本地备份共同使用，容量测算须包含至少两份完整本地备份、临时写入及数据库增长余量；不足时先扩容数据卷，不能挤占 PGDATA 运行空间。初始空间 / inode 告警 80%，备份前先检查剩余容量。</li>
+<li>导出文件不是临时 S3 缓存，不沿用“7 天直接清理”的假设。由业务确认正式文件保留期，按文档引用校验后执行受控清理；备份与快照保留周期不能代替业务文件保留策略。</li>
+<li>下载由已鉴权接口验证文档归属后读取本地文件，阻断匿名 / 越权访问、路径穿越和公开静态路径绕过。需验证容器挂载、生产文件读取、重启 / 重建后可用性；如改为非 public 目录，研发同步调整写入与读取逻辑。</li>
+<li>本地文件持久化是本版正式部署目标，不作为临时 EBS 例外或 S3 迁移过渡。未完成授权下载与恢复验收前，暂不开放正式导出功能；无需为此实施 S3 适配。</li>
+</ul>
+
+<h3>6.1 自管 PostgreSQL 与文件恢复</h3>
+<ul>
+<li>建议每天 02:30（Asia/Shanghai）使用匹配 PG17 的原生工具做全库一致性逻辑备份：pg_dump 自定义格式覆盖 pt_ai_cause 的 cause / data schema、数据与对象；DBA 受控导出所需角色 / 授权恢复资料，并记录扩展版本、迁移版本及配置引用。备份账号经批准临时注入，不使用 Web 账号承担管理员操作，敏感恢复资料加密且仅运维可读。</li>
+<li>备份窗口暂停调度及文件写入 / 清理，保存图谱、导出、必要投递记录与清单，核对数据库文件引用；备份成功后关闭文件、完成校验与落盘，再触发数据盘快照。备份、清理和快照使用统一锁，避免正在生成或已删除的备份被标记为有效恢复点。故障时解除临时暂停并告警，不得伪报成功。</li>
+<li>本地建议保留最近两套已完成备份，云端保留最近 7 天的成功加密快照；新快照完成且包含有效备份后才能清理旧本地备份，不删除唯一成功恢复点。快照清理由获批运维自动化执行，权限按 Cause 资源标签与支持的 IAM 条件限制；Web 无创建 / 删除 / 共享快照权限。</li>
+<li>数据卷丢失时，以最近已完成快照内的有效逻辑备份作为恢复基线，而不是复制运行中的 PGDATA。由快照建立新卷，将数据库恢复到新 PGDATA，并从受控密钥系统重新交付 TLS 私钥 / Secret；上线前、重大迁移前及上线后分别按审批留存备份并做恢复演练。</li>
+<li><strong>恢复保障变化：</strong>本版取消 S3 持续 WAL 归档方案，不再沿用旧稿“RPO ≤ 15 分钟”的目标，也不宣称具备任意时间点恢复。每日备份 / 快照的整机恢复点取决于最近成功备份的数据时间及快照完成情况；RPO / RTO 由业务审批并通过演练确认。若需分钟级恢复，另行设计符合无 S3 约束的异机备份方案，本次不默认增加主机。</li>
+<li>故障恢复流程：批准恢复资源 → 从保留卷或加密快照提取已完成备份 → 新 PG17 实例恢复角色 / 数据库与应用文件 → 验证 TLS、业务数据及文件引用 → 恢复应用 / 调度 → 更新 ALB 目标。恢复不回滚原平台 RDS，也不构成常驻第二台 Cause EC2 的申请。</li>
+<li>监控最近成功数据库 / 文件备份时间、校验结果、快照状态与有效恢复点年龄、备份占用和恢复演练结果；任务失败立即告警。数据库 WAL 正常持久性设置继续保留，但本版不要求对外归档；备份与快照验收是上线门禁，不因不使用 S3 而豁免。</li>
+</ul>
+
+<h2>7. 域名、ALB 与长连接</h2>
+<table>
+<tr><th>配置</th><th>Cause 补充</th></tr>
+<tr><td>域名 / DNS</td><td>正式访问地址 https://cause.pmdevops.com/；cause.pmdevops.com → 现有 Internal ALB。沿用内网 / VPN 访问范围，域名确定不代表开放公网。APP_URL=https://cause.pmdevops.com（不带尾斜杠），避免拼接回调产生双斜杠。</td></tr>
+<tr><td>监听与路由</td><td>HTTPS 443，TLS 1.2+；Host = cause.pmdevops.com → Cause TG → 3100。保留 Host、X-Forwarded-Proto / For 信息；不将 Cause 的 /api 重写为其他前缀。</td></tr>
+<tr><td>健康检查</td><td>拟新增 GET /api/health/ready，成功 200、不可就绪 503；检查配置、短超时数据库连接及必要存储，不触发付费模型调用。建议间隔 30s、超时 5s、健康 / 不健康阈值各 2。独立 /api/health/live 用于进程存活。</td></tr>
+<tr><td>现状提醒</td><td>上述 health 路由、原清单的 /ready 与 setup.state 在当前 Cause 中均未发现实现。开发完成后才能登记健康检查路径；不得用登录页 200 / 302 冒充就绪。</td></tr>
+<tr><td>SSE / 超时</td><td>问答与深度研究使用 SSE。ALB idle timeout 建议初始 600s；这是共享 ALB 属性，须确认不影响既有应用。应用补每 15s 心跳；当前 sse.ts 无周期心跳。若有 Nginx，关闭该链路缓冲并对齐读取超时；保留 no-cache / no-transform。</td></tr>
+<tr><td>请求体</td><td>单张 PNG 代码限制 5 MiB；base64 JSON 会膨胀。若存在反向代理，请按导出接口设置至少 8 MiB 的可控上限并验收；不能误用小请求体限制阻断合法导出。</td></tr>
+<tr><td>下线与重启</td><td>TG 连接排空初始 300s，容器退出等待与之协调。发布前停止新研究及调度，检查在途任务；超出窗口的任务需明确失败 / 重试，不承诺当前进程内任务无损恢复。</td></tr>
+</table>
+
+<h2>8. Foundation Gateway 与 Access 认证接入</h2>
+<p>两项均为必需依赖：Foundation Gateway 提供模型调用，Access 认证体系负责用户登录和入口权限。当前认证实现分别调用 Identity OIDC 和 Access Internal API；Identity 是该认证链路的组成部分，不是要求 Cause 再部署一套认证服务。网关地址、Access 内部地址及 OIDC Issuer 由平台负责人回填，不根据 Cause 域名自行推导。</p>
+<h3>8.1 Access 统一认证（Identity OIDC + Access API）</h3>
+<table>
+<tr><th>项目</th><th>配置要求</th></tr>
+<tr><td>OIDC Issuer</td><td>由 Access / Identity 管理员交付平台既有正式 HTTPS Issuer（含 realm 路径），浏览器和 Cause 服务端均须可达；不可改成 Cause 域名、localhost 或私有 IP Issuer。</td></tr>
+<tr><td>OIDC Client</td><td>在同一 realm 注册 / 核对 pt-ai-cause；confidential client，Authorization Code + PKCE S256；允许当前实现使用 client_secret_post。</td></tr>
+<tr><td>登录回调</td><td>精确允许 https://cause.pmdevops.com/api/auth/callback，不使用生产全路径通配。</td></tr>
+<tr><td>登出回跳</td><td>精确覆盖 https://cause.pmdevops.com/login?signedOut=1；保留此参数，避免退出后立即自动登录。</td></tr>
+<tr><td>用户信息</td><td>确认 sub 稳定且为 Access 对应 subject。Access 内部返回身份与 cause entitlement；Cause 本地业务角色仍单独管理，不能将入口开通当作已授予全部业务权限。</td></tr>
+<tr><td>Access 入口</td><td>entryId = cause，入口 URL = https://cause.pmdevops.com/；为批准人员授予 cause entitlement。联调 POST /internal/session-activated 与 /internal/principal；请求头 x-pt-access-internal-secret，body 含 subject 与 entryId。</td></tr>
+<tr><td>故障策略</td><td>Cause 默认 principal 缓存 60 秒；未命中 / 缓存过期时 Access 故障拒绝访问。需监控登录、授权失败与撤权效果，不把访问服务当纯可选依赖。</td></tr>
+<tr><td>Cookie</td><td>pt_cause_session，HttpOnly、SameSite=Lax，NODE_ENV=production 时 Secure；不扩大到跨应用 Cookie 域。</td></tr>
+</table>
+<h3>8.2 Foundation Gateway</h3>
+<ul>
+<li>为 Cause 签发独立的应用调用身份 / Agent Token，登记模型白名单、预算、限流、审计及负责人。Provider Key 仍只由 Foundation 管理，不下发 Cause，也不复用 Creative / Portal 的调用 Token。</li>
+<li>Cause 当前使用 OpenAI SDK 与 LangChain ChatOpenAI，配置变量是 MODEL_GATEWAY_*，不是 Creative 的 FOUNDATION_*。须由 Foundation 团队提供<strong>经过验收的 OpenAI 兼容基址</strong>（包含所需路径前缀）、Bearer 认证方式和真实模型 ID，不能仅抄 Foundation Console 地址。</li>
+<li>验收非流式 chat/completions、SSE 流式、tools / tool_calls、错误码、超时、模型许可及计费。Creative 使用 FoundationClient 和 operation bindings；若生产 Foundation 只提供其专用鉴权 / 路由 / 响应契约，Cause 必须增加适配层，不能认为改 URL 就能接通。</li>
+<li>主备网关都必须遵守 Foundation 治理。首发不启用备用时删除三个 FALLBACK 变量；启用时完整配置，禁止直连 Provider 绕过管控。初始超时建议显式设为 120000ms，按真实模型验证。</li>
+</ul>
+<h3>8.3 Portal / Creative</h3>
+<p>Portal 添加“Cause / 归因分析”入口及可见性，目标为 https://cause.pmdevops.com/；由 Access 认证体系提供 SSO，不复制浏览器 token。Creative 无需为 Cause 新开数据库、Bucket 或 API 权限。Portal 入口登记不是 Cause 核心运行依赖；如以后需要跨应用交换报表、素材或知识，另行申请受控 API 契约。</p>
+
+<h2>9. 环境配置、Secret 与 IAM</h2>
+<h3>9.1 已有变量的生产取值</h3>
+<table>
+<thead><tr><th>变量</th><th>生产要求</th><th>来源</th></tr></thead>
+<tbody>
+<tr><td>NODE_ENV / APP_ENV</td><td>均为 production</td><td>部署非敏感配置</td></tr>
+<tr><td>APP_URL</td><td>https://cause.pmdevops.com</td><td>部署配置</td></tr>
+<tr><td>DATABASE_URL</td><td>同机容器 postgres:5432/pt_ai_cause，schema=cause，verify-full 与 /run/certs/cause-pg-ca.pem；参见第 5 节</td><td>Cause Runtime Secret；迁移时仅在迁移进程替换</td></tr>
+<tr><td>AUTH_SECRET</td><td>强随机，至少 32 字符；不得保留开发值</td><td>Cause Runtime Secret</td></tr>
+<tr><td>OIDC_ISSUER / OIDC_CLIENT_ID</td><td>正式 Issuer / pt-ai-cause</td><td>Identity 交付</td></tr>
+<tr><td>OIDC_CLIENT_SECRET / ACCESS_INTERNAL_SECRET</td><td>生产分配凭据，显式覆盖所有本地默认值</td><td>Cause Runtime Secret</td></tr>
+<tr><td>ACCESS_INTERNAL_BASE_URL</td><td>http://&lt;Platform私有DNS&gt;:4300，或已批准 TLS 服务地址；无 /internal 后缀</td><td>部署配置</td></tr>
+<tr><td>ACCESS_ENTRY_ID / ACCESS_PRINCIPAL_CACHE_SECONDS</td><td>cause / 60（撤权窗口需业务确认）</td><td>部署配置</td></tr>
+<tr><td>MODEL_GATEWAY_BASE_URL</td><td>Foundation 交付的兼容 API 基址，不直接假定裸 8080 地址即可用</td><td>Foundation 配置</td></tr>
+<tr><td>MODEL_GATEWAY_API_KEY / MODEL_GATEWAY_DEFAULT_MODEL</td><td>Cause 独立调用 Token / 已许可模型 ID</td><td>Token 进 Runtime Secret；模型 ID 非敏感配置</td></tr>
+<tr><td>MODEL_GATEWAY_TIMEOUT_MS</td><td>建议 120000；.env.example 为 60000，代码缺省为 120000，生产必须显式统一</td><td>部署配置</td></tr>
+<tr><td>MODEL_GATEWAY_FALLBACK_URL / KEY / MODEL</td><td>默认不设置；启用时三项完整、经过批准</td><td>配置 + Runtime Secret</td></tr>
+<tr><td>ADJUST_API_TOKEN</td><td>有相应数据访问权限的生产令牌；仅启用 Adjust 时必需</td><td>Cause Runtime Secret</td></tr>
+<tr><td>ADJUST_RS_API_BASE_URL / ADJUST_RS_UTC_OFFSET</td><td>https://automate.adjust.com/reports-service / +08:00；时区改变须评估历史回补</td><td>部署配置</td></tr>
+<tr><td>RESEARCH_GRAPH_PATH</td><td>可设 /app/data/research-graph/knowledge-graph.json，并持久挂载父目录</td><td>部署配置；由 store.ts 直接读取</td></tr>
+<tr><td>TZ</td><td>建议 Asia/Shanghai，并使 timer / cron 与业务排程时区一致</td><td>运行环境配置</td></tr>
+</tbody>
+</table>
+<p><strong>不要误配预留变量：</strong>REDIS_URL、MQ_URL 当前无运行时使用，不据此申请服务；OBJECT_STORAGE_* 本次不配置，Cause 不使用对象存储；SMTP_* 尚不实现真实邮件；FIRECRAWL_* 不是当前 Web 抓取必需服务。MCP 实际从数据源 config 的 proxyUrl / headers 建连，不能仅填写 MCP_GATEWAY_* 就视为配置完成。未使用的可选 URL 变量应省略，不写空字符串触发 Zod URL 校验。</p>
+<h3>9.2 Secret 交付与角色权限</h3>
+<ul>
+<li>新增 <code>pt-ai/prod/cause/runtime</code>、<code>pt-ai/prod/cause/migration</code>、<code>pt-ai/prod/cause/db-admin</code> 三个 Secret。DB Admin 保存本机数据库管理员凭据，数据库 TLS 私钥由批准的证书 / 密钥系统受控交付。工单只返回引用，受控启动器读取并注入，应用不会自动解析 ARN。</li>
+<li>Cause Instance Profile：读取自身 Runtime Secret、写自身日志及所需 SSM / 指标权限；不授予 Cause 业务或备份 S3 Bucket 权限。平台既有 SSM 托管策略如有服务运行所需权限，仍由安全人员按用途核对，不把它当业务 Bucket 授权。快照创建、保留清理和恢复使用独立受控运维角色 / 自动化；若使用客户管理 KMS Key，按快照及恢复需求配置最小权限与 Key policy。</li>
+<li>Cause Profile 不可读取 Migration / DB Admin Secret、原 RDS Master、Core / Platform Secret 或 Provider Key。部署 / DBA 角色按审批临时注入初始化、迁移凭据；不得保存到镜像或普通 Compose。EC2 Instance Profile 不是容器级权限边界，须限制 Web 容器访问 IMDS 和备份目录，不把可读取数据库备份的权限视为普通 Web 权限。</li>
+<li>轮换数据库、OIDC、Access 与 Foundation 凭据时协调两端更新并受控重启；当前进程配置与客户端会缓存，不能假定 Secret 更新后即时热生效。日志、镜像、工单、Compose、仓库不得含真实 Secret。</li>
+<li>如启用数据库 / API / MCP 数据源保存凭据，须核对该数据源配置的加密或 Secret 引用解析实现；当前 config 字段不等于已具备 Secret ARN 解析能力，禁止把敏感 headers / 连接串当普通配置导出。</li>
+</ul>
+
+<h2>10. 定时任务、日志和告警</h2>
+<h3>10.1 调度配置</h3>
+<table>
+<tr><th>任务</th><th>建议调度</th><th>实现与验收要求</th></tr>
+<tr><td>Adjust 同步</td><td>每天 09:30，Asia/Shanghai，回补近 3 天；单任务执行，失败告警</td><td>优先 systemd timer 调受控 CLI scripts/sync-adjust-data.ts --days 3，固定已打包 tsx，不在线下载。当前脚本无保护地加载 .env，须改为兼容已注入环境，或明确受限运行时环境文件。检查真实同步日期 / 行数，不仅看退出码。</td></tr>
+<tr><td>到期报告 / 导出</td><td>每分钟扫描；仅一个执行器，防重入</td><td>拟补专用本地 CLI 调用 runDueJobs；当前只有需用户会话的 POST /api/v1/schedules/run。定时图片只复用最近一次客户端导出 PNG，不会在服务器重绘最新画布。</td></tr>
+<tr><td>数据库 / 文件备份与 EBS 快照</td><td>每天 02:30 启动一致性逻辑备份与文件备份，成功后触发数据盘快照；建议保留 7 天成功快照</td><td>原生 PG17 备份工具；与 Adjust 同步错峰，协调文件写入 / 清理、统一锁、资源限额与快照完成告警。必须记录实际有效恢复点，不以任务触发成功代替备份成功。</td></tr>
+<tr><td>文件 / 本地备份清理</td><td>每日检查；正式文件按业务保留期，本地备份按已完成快照与保留规则清理</td><td>不把正式导出当短期缓存；先验证引用、剩余成功恢复点与空间，不允许清理正在写入的备份或唯一有效备份。</td></tr>
+</table>
+<p class="warning">两个 HTTP 调度接口都调用 requireActor；注释里的 localhost:3000 匿名 curl 既是旧端口，也缺少当前登录态，不能直接照搬到生产 cron。不要长期复制个人 Cookie 或删除鉴权。生产采用专用本地作业入口，或先研发受限机器身份接口。Web 人工触发与 timer 必须共用同一互斥机制；仅 timer 加锁不能防止人工触发重叠。</p>
+<p>邮件渠道目前即使返回 sent，仍会带 mock:true，实际只落盘 .deliveries；若首发承诺自动邮件，需先实现 SMTP / 公司邮件通道、鉴权和真实收信验收。否则关闭该业务承诺，不申请额外 SES 作为当然依赖。</p>
+<h3>10.2 新增监控</h3>
+<ul>
+<li>EC2 状态、CPU、内存、EBS 空间 / inode、容器 OOM 与重启次数；初始容量告警建议连续 10 分钟超过 80%，再按基线调整。</li>
+<li>Cause TG UnHealthyHostCount、目标 5xx、响应时间、SSE 异常断流；单目标不健康立即通知。区分应用自身就绪、Identity / Access 不可达与 Foundation 失败。</li>
+<li>Cause 本机 PostgreSQL 存活、容器内存、连接数、锁等待、慢 SQL、事务 / checkpoint、磁盘延迟 / IOPS、PGDATA / WAL / 临时文件增长与本地备份占用。通过本机采集脚本 / Agent 上报，不使用只对 RDS 存在的 FreeableMemory 等指标名充当已接入监控；重点监控分析负载是否挤占同机 Web。</li>
+<li>Adjust 最近成功同步时间、最新 stat_date、失败 / 限流、落库行数；超一个调度周期未成功告警。API 落库失败可能只写警告，应针对 api-ingest 警告与数据新鲜度监控。</li>
+<li>调度失败 / 重复投递、mock 邮件误报、图谱 / 导出备份、EBS 快照完成 / 费用及恢复点年龄、Secret 轮换与证书到期。业务指标需应用 / 脚本补采集，不是创建 Log Group 后自动具备。</li>
+<li>日志汇入 /pt-ai/prod/cause，脱敏 Cookie、Authorization、连接串、Token、原始业务内容；默认保留 30 天，审计周期由公司确定。告警复用现有 SNS / 值班渠道。</li>
+</ul>
+
+<h2>11. 上线门禁与职责分工</h2>
+<table>
+<thead><tr><th>责任方</th><th>必需交付 / 验收</th><th>状态说明</th></tr></thead>
+<tbody>
+<tr><td>云平台 / 运维</td><td>第 2 节增量资源、私网连通、证书 / DNS、实例角色、日志、Secret ARN、部署通道、定时执行框架</td><td>待申请 / 待目标环境验证</td></tr>
+<tr><td>Cause 研发</td><td>生产镜像 / Compose、Prisma 生成物、Node 版本对齐、无开发凭据、正确监听 3100、非 root / 限额 / 重启策略</td><td>现有开发 Compose 不满足</td></tr>
+<tr><td>Cause 研发 + DBA</td><td>本机 PG17 初始化 / 持久卷 / 后端网络隔离、版本化 cause / data 迁移、Runtime / Migration / Admin 分离、禁止运行期 DDL、两条连接链路 verify-full 验收</td><td>首发核心阻断项；不得沿用开发口令或宿主机 5432 映射</td></tr>
+<tr><td>Access / Identity 管理员</td><td>Client、回调 / 登出、cause 入口授权、无权限拒绝、禁用 / 撤权、会话 Cookie 及 SSO 验证</td><td>已有 Cause BFF 实现，仍须生产配置与联调</td></tr>
+<tr><td>Foundation + Cause 研发</td><td>独立调用身份、兼容协议或适配层、普通 / 流式 / tools 调用、预算与限流计量</td><td>不得凭共享 URL 宣称接入完成</td></tr>
+<tr><td>Cause 研发 + 运维</td><td>健康检查、SSE 心跳、长任务排空、同步 / 人工任务统一锁、受控无人值守入口及 ENV 加载</td><td>部分未实现，须补齐或明确降级范围</td></tr>
+<tr><td>Cause 研发 + 安全</td><td>EBS 文件挂载与授权下载、静态路径绕过防护、目录隔离、业务文件保留策略、敏感数据源凭据处理</td><td>正式产物功能开放前完成；S3 适配不在本次范围</td></tr>
+<tr><td>Cause 研发 + 业务</td><td>真实邮件投递及收件验收；不以 mock:true 通过验收</td><td>仅在首发包含邮件功能时为阻断项</td></tr>
+<tr><td>DBA / 运维 + 业务</td><td>一致性数据库 / 文件备份、加密 EBS 快照及新卷恢复演练、单机丢失恢复、资源竞争与备份峰值压测、数据盘保护、补丁维护 / 回滚</td><td>备份方案及 RPO / RTO 待审批与实测；不再承诺分钟级 PITR，自管数据库责任落实到人</td></tr>
+</tbody>
+</table>
+<p><strong>建议部署顺序：</strong>EC2 / 网络 / 加密卷 → 确认数据盘挂载 → 注入数据库证书与初始化凭据 → 启动本机 PG17 并创建角色 / 库 → 运行受控迁移 → 配置本地备份 / 加密快照并恢复演练 → Access 认证 / Foundation Gateway 注册 → 注入应用 Runtime Secret → 启动 Web 与健康检查 → 登录及容量联调 → 启用调度 → 放行入口。失败时停用新任务按审批回滚；应用回退不自动回退数据库，禁止重建或清空 PGDATA。</p>
+
+<h2>12. 运维回填与原清单修订定位</h2>
+<h3>12.1 Cause 专项交付回填</h3>
+<p>请与原清单第 9 节一起返回下列信息；所有凭据仅提供 Secret ARN，不写明文。</p>
+<table>
+<tr><th>类别</th><th>需回填信息</th></tr>
+<tr><td>基础资源</td><td>Account / Region；Cause Instance ID、AMI、架构、私有 DNS；Subnet / AZ、SG ID、EBS ID / 容量 / 加密配置。</td></tr>
+<tr><td>入口</td><td>https://cause.pmdevops.com/ 的 DNS / 证书；ALB ARN、Cause TG ARN、规则优先级、3100 目标、最终健康检查路径、共享 idle timeout。</td></tr>
+<tr><td>数据库</td><td>PG17 镜像版本 / digest、服务名 postgres、私有容器网络、PGDATA 宿主机 / 容器路径、参数、CA / SAN；pt_ai_cause、cause / data schema、Runtime / Migration / Admin 角色与迁移版本；5432 无外部映射及 TLS 负向测试结果。</td></tr>
+<tr><td>存储与密钥</td><td>50 + 150 GiB EBS、终止保留与开机挂载保护、graph / exports / deliveries / backup 挂载、文件保留期、快照任务 / 保留策略 / Snapshot ID、KMS 配置、三类 Cause Secret ARN、Instance Profile；无需回填 Cause Bucket。</td></tr>
+<tr><td>应用依赖</td><td>Foundation Gateway 正式兼容基址 / 调用身份引用 / 模型许可 / 预算；Access Internal API 地址 / Secret 引用、cause 入口授权；Identity Issuer / Client 与 cause.pmdevops.com 下的回调 / 登出白名单；连通与认证验收结果。</td></tr>
+<tr><td>运营交付</td><td>镜像 digest / 架构 / 校验和、安装包与迁移包、timer 与时区、外联白名单、日志 / 告警通道、备份 / 恢复结果、部署通道及变更窗口。</td></tr>
+<tr><td>首发范围与风险</td><td>未上线功能、正式 EBS 文件存储与保留策略、应用和数据库同机故障 / 停机风险、自管数据库责任人、备份 / 快照方案审批、批准的 RPO / RTO 与实测恢复结果、整改期限。</td></tr>
+</table>
+<h3>12.2 原 v1.0 对应修改点</h3>
+<ul>
+<li>第 1 节：增加 Cause 独立 EC2，应用与 PostgreSQL 同机；必须接入 Foundation Gateway 与 Access 认证，不复用 RDS，Cause 产物改为 EBS 持久化。</li>
+<li>第 2 节：资源数量按本补充第 2 节更新；特别是 EC2 3、原 RDS 1 且规格不变、业务逻辑库 RDS 5 + 本机 1、原 Bucket 3 且 Cause 增量为 0、TG 6、域名 7。</li>
+<li>第 3 节：新增 Cause 主机条目；Core 8080 与 Platform 4300 增加 Cause SG 来源。</li>
+<li>第 4 节：原 RDS 要求保持不变，不新增 Cause 库、账号或 SG 规则；Cause 的本机 PG17、三类账号、schema、TLS、迁移、维护要求见本补充第 5 节。</li>
+<li>第 5 节：原三个 Bucket 保持不变，Cause 不申请或使用 S3 Bucket / Prefix；以本地数据库 / 文件备份和加密 EBS 快照落实恢复，文件授权下载仍需验收。</li>
+<li>第 6 节：正式域名使用 cause.pmdevops.com；同步证书覆盖、ALB Host 规则、APP_URL、Access / Portal 入口及 OIDC 回调 / 登出地址。</li>
+<li>第 7～9 节：增加 Cause IAM / Secrets、应用与作业监控、交付回填项。</li>
+<li>第 10 节：继续不申请 EKS、Redis、Kafka、SQS、EFS、GPU、RDS Proxy / Read Replica / Multi-AZ、CloudFront、公网 ALB 与高可用副本；允许本次明确新增的 Cause 应用节点，不将未使用的模板变量当资源依赖。</li>
+</ul>
+
+<h2>附录：代码事实索引</h2>
+<p>下列为本补充的核对依据，路径相对 Cause 项目根目录；文档未修改业务代码，未读取真实 .env 或连接生产资源。</p>
+<table>
+<tr><th>代码位置</th><th>确认事项</th></tr>
+<tr><td>package.json；next.config.ts；docker-compose.yml</td><td>Node 声明、3100 启动端口、外置依赖、未配置 standalone、现有 Compose 仅开发数据库。</td></tr>
+<tr><td>lib/env.ts；.env.example</td><td>生产环境变量、主备网关、OIDC / Access、Adjust 时区，以及预留配置与超时默认差异。</td></tr>
+<tr><td>lib/db/index.ts；prisma.config.ts；prisma/schema.prisma</td><td>Prisma 7 驱动适配器、schema=cause、迁移路径配置；当前未发现迁移文件或 vector 字段。</td></tr>
+<tr><td>lib/server/connectors/postgres.ts</td><td>分析连接池、只读查询与连接 URL 删除全部查询参数的 TLS 风险。</td></tr>
+<tr><td>lib/server/integrations/adjust-sync.ts；api-ingest.ts</td><td>data 分析表、运行时 DDL、批量写入、reset 分支及落库失败告警。</td></tr>
+<tr><td>lib/server/model-gateway.ts</td><td>OpenAI / ChatOpenAI 调用、Bearer Key、流式 / 非流式与主备配置。</td></tr>
+<tr><td>lib/server/auth/*；app/api/auth/{login,callback,logout,session}/route.ts</td><td>BFF、PKCE、client_secret_post、Cookie、Access 内部调用、回调与带 signedOut 的登出地址。</td></tr>
+<tr><td>lib/server/research-graph/store.ts；lib/server/delivery/*</td><td>图谱文件、PNG 本地导出与 SMTP mock；本版保留本地持久化，不要求接入 S3。</td></tr>
+<tr><td>lib/server/scheduler.ts；scripts/sync-adjust-data.ts；app/api/v1/schedules/run/route.ts；app/api/v1/syncs/adjust/route.ts</td><td>无常驻业务定时器、CLI 环境加载、调度接口要求会话、旧匿名 curl 注释不可照用。</td></tr>
+<tr><td>lib/server/sse.ts；lib/server/connectors/web.ts；mcp.ts</td><td>SSE 无周期心跳、实际网页外联、MCP 从数据源配置建连。</td></tr>
+<tr><td>相邻 Creative 项目的 src/server/model-gateway/foundation-client.ts</td><td>Creative 使用 FoundationClient / Agent Token / operation bindings；不据此假定 Cause 原生 OpenAI 调用与生产契约完全兼容。</td></tr>
+</table>
+<p class="meta">文档结论来自所提供资源清单与当前仓库静态核对；未进行 AWS 账号核查、Region 规格核价、生产部署或端到端联调。最终资源规格、功能范围和安全例外由相应负责人审批。</p>
+</body>
+</html>

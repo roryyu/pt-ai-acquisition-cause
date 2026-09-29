@@ -46,6 +46,8 @@ export interface SubQuestionResult {
   question: string;
   rationale: string;
   findings: string[];
+  /** 本轮使用的原文摘录与未深读摘要；可选以兼容历史研究记录 */
+  evidence?: EvidenceMaterial[];
   /** 本子问题引用的编号列表 */
   citationNos: number[];
   searchedQueries: string[];
@@ -165,11 +167,28 @@ interface SearchHit {
   snippet: string;
 }
 
-interface EvidenceMaterial {
+type EvidenceMaterial = {
   no: number;
   title: string;
   url: string;
   text: string;
+  kind: "search_snippet" | "page_excerpt";
+};
+
+/** 页内锚点不代表独立来源，保留可能影响正文的查询参数。 */
+function normalizeEvidenceUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function formatEvidenceMaterial(material: EvidenceMaterial): string {
+  const label = material.kind === "page_excerpt" ? "正文摘录" : "搜索摘要（未核对正文）";
+  return `[${material.no}] ${material.title}\n来源：${material.url}\n${label}：\n${material.text}`;
 }
 
 /** SearchOp 结果行归一化为检索命中 */
@@ -177,7 +196,7 @@ function toSearchHits(rows: Record<string, unknown>[]): SearchHit[] {
   return rows
     .map((r) => ({
       title: String(r.title ?? ""),
-      url: String(r.url ?? ""),
+      url: normalizeEvidenceUrl(String(r.url ?? "")),
       snippet: String(r.snippet ?? ""),
     }))
     .filter((r) => r.url);
@@ -221,23 +240,25 @@ async function collectEvidenceForSubQuestion(
     if (seenUrls.has(r.url)) continue;
     seenUrls.add(r.url);
     const no = registry.register(r.title, r.url);
-    materials.push({ no, title: r.title, url: r.url, text: r.snippet });
+    materials.push({ no, title: r.title, url: r.url, text: r.snippet.slice(0, 1200), kind: "search_snippet" });
   }
 
   // 3) 深读：排名靠前的结果经 ExtractOp 算子抽取关键要点（聚焦子问题）
-  const deepTargets = searchResults.slice(0, deepReadCount);
-  for (let i = 0; i < deepTargets.length; i++) {
+  // 去重后按成功页数计额；失败可换下一页，但尝试次数最多为目标页数的两倍。
+  const deepTargets = materials.slice(0, deepReadCount * 2);
+  let deepReadSucceeded = 0;
+  for (let i = 0; i < deepTargets.length && deepReadSucceeded < deepReadCount; i++) {
     const target = deepTargets[i];
     if (!target) continue;
-    if (seenUrls.has(target.url) && materials.some((m) => m.url === target.url && m.text.length > 300)) continue;
     const stepId = `${stepPrefix}_extract_${i + 1}`;
     sink({ type: "tool_call", stepId, tool: "extract", input: { url: target.url, focus: plan.question } });
     const tFetch = Date.now();
     const opResult = await runOperator("extract", { url: target.url, focus: plan.question });
-    const points = opResult.ok
-      ? opResult.rows.map((r) => String(r.point ?? "").trim()).filter((p) => p)
+    const quotes = opResult.ok
+      ? opResult.rows.map((r) => typeof r.quote === "string" ? r.quote.trim() : "").filter(Boolean)
       : [];
-    if (points.length > 0) {
+    if (quotes.length > 0) {
+      deepReadSucceeded += 1;
       const no = registry.register(target.title, target.url);
       // 深读要点替换同 URL 的摘要材料
       const idx = materials.findIndex((m) => m.url === target.url);
@@ -245,13 +266,14 @@ async function collectEvidenceForSubQuestion(
         no,
         title: target.title,
         url: target.url,
-        text: points.map((p) => `- ${p}`).join("\n"),
+        text: quotes.join("\n\n"),
+        kind: "page_excerpt",
       };
       if (idx >= 0) materials[idx] = entry;
       else materials.push(entry);
       sink({
         type: "tool_result", stepId, tool: "extract",
-        summary: `「${target.title.slice(0, 40)}」抽取 ${points.length} 条要点`,
+        summary: `「${target.title.slice(0, 40)}」保留 ${quotes.length} 条正文摘录`,
         elapsedMs: Date.now() - tFetch,
       });
     } else {
@@ -264,9 +286,7 @@ async function collectEvidenceForSubQuestion(
   }
 
   // 4) 证据抽取：LLM 基于材料生成结构化发现
-  const materialBlock = materials
-    .map((m) => `[${m.no}] ${m.title}\n${m.text.slice(0, 1200)}`)
-    .join("\n\n");
+  const materialBlock = materials.map(formatEvidenceMaterial).join("\n\n");
   let findings: string[] = [];
   let citationNos: number[] = [];
   try {
@@ -298,6 +318,7 @@ async function collectEvidenceForSubQuestion(
     question: plan.question,
     rationale: plan.rationale,
     findings,
+    evidence: materials,
     citationNos: [...new Set(citationNos)],
     searchedQueries,
     elapsedMs: Date.now() - t0,
@@ -505,6 +526,17 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
           `### 子问题 ${i + 1}：${r.question}\n${r.findings.map((f) => `- ${f}`).join("\n")}`,
       )
       .join("\n\n");
+    // 原文绕过发现摘要直达写作；未深读来源仅附已引用的至多 4 条短摘要，控制上下文成本。
+    const sourceEvidenceBlock = subResults.map((r) => {
+      const evidence = r.evidence ?? [];
+      const excerpts = evidence.filter((m) => m.kind === "page_excerpt");
+      const snippets = evidence
+        .filter((m) => m.kind === "search_snippet" && r.citationNos.includes(m.no))
+        .slice(0, 4)
+        .map((m) => ({ ...m, text: m.text.slice(0, 600) }));
+      const block = [...excerpts, ...snippets].map(formatEvidenceMaterial).join("\n\n");
+      return `### ${r.question}\n${block || "未取得可用原文证据；不能据此给出确定结论。"}`;
+    }).join("\n\n");
     const citationBlock = citations.map((c) => `[${c.no}] ${c.title} — ${c.url}`).join("\n");
     // 来源任务问答背景：报告需呼应背景结论并给出针对性建议（无背景时不注入）
     const sourceBlock = options.sourceContext ? `${options.sourceContext}\n\n` : "";
@@ -519,7 +551,7 @@ export async function runDeepResearch(options: DeepResearchOptions): Promise<Dee
         { role: "system", content: REPORT_PROMPT },
         {
           role: "user",
-          content: `${sourceBlock}${graphBlock}研究问题：${question}\n研究目标：${objective}\n\n${compareBlock}## 各子问题研究发现\n${evidenceBlock}\n\n## 引用来源\n${citationBlock}`,
+          content: `${sourceBlock}${graphBlock}研究问题：${question}\n研究目标：${objective}\n\n## 原始证据\n${sourceEvidenceBlock}\n\n${compareBlock}## 各子问题研究发现\n${evidenceBlock}\n\n## 引用来源\n${citationBlock}`,
         },
       ],
       { temperature: 0.3, maxTokens: 8192 },

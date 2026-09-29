@@ -1,23 +1,66 @@
-# 本地开发基础设施（npm run local:up，design.md 10.2）
-# 仅 PostgreSQL + pgvector：Redis / MinIO 属于 design.md 6.3 的后续阶段预留，当前无代码使用，故不再启动容器
-# 注：如已使用本机自装 PostgreSQL（.env 的 DATABASE_URL），可删除 postgres 服务
+# pt-ai-acquisition-cause 容器编排（开发基础设施 + 生产全栈共用一个文件）
+# 用法：
+# 1. 本地开发（npm run local:up）：不激活 profile，仅启动 postgres，行为与旧版一致
+# 2. 生产部署（见 deploy.md）：服务器 .env 设置 COMPOSE_PROFILES=app 激活全栈；
+#    服务器上另有 docker-compose.override.yml（deploy.md 生成，不入库）把卷重定向到 /srv/cause 数据盘
 services:
   postgres:
     # 官方 pgvector 镜像，内置向量扩展（design.md 6.1）
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_USER: insight
-      POSTGRES_PASSWORD: insight
-      POSTGRES_DB: insight
+      POSTGRES_USER: ${POSTGRES_USER:-insight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insight}
+      POSTGRES_DB: ${POSTGRES_DB:-insight}
     ports:
-      - "5432:5432"
+      # 仅绑定宿主机回环：本地 npm run dev 连 127.0.0.1:5432；不对实例网卡暴露
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U insight -d insight"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-insight} -d ${POSTGRES_DB:-insight}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+
+  app:
+    # profile 隔离：默认不启动，避免与本地 npm run dev 抢占 3100 端口
+    profiles: ["app"]
+    build:
+      context: .
+    image: cause-app
+    env_file: .env
+    environment:
+      # environment 优先于 env_file，强制生产语义
+      NODE_ENV: production
+    ports:
+      # 全接口发布：ALB 目标组需经实例私网 IP 访问 3100；暴露范围由安全组控制
+      - "${APP_HOST_PORT:-3100}:3100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # 三类进程内文件系统状态（不在数据库，见 lib/server/research-graph/store.ts、
+      # lib/server/delivery/image-channel.ts、.deliveries 投递记录）：
+      # 默认落仓库相对路径；服务器上由 override 重定向到 /srv/cause 数据盘
+      - ./data/research-graph:/app/data/research-graph
+      - ./public/exports:/app/public/exports
+      - ./.deliveries:/app/.deliveries
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4g
 
 volumes:
   pgdata:

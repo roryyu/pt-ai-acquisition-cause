@@ -170,14 +170,16 @@ enum AuditAction {
 
 // ─── 用户与权限（design.md 6.4.1）───────────────────────────────────────────────
 
-/// 用户表：对应 UserV1
+/// 用户表：对应 UserV1；接入 Access 后 id 即 Access subject（Keycloak UUID）
 model User {
-  id           String   @id // user_xxx
-  email        String   @unique
-  name         String
-  departmentId String?  @map("department_id")
-  role         UserRole @default(viewer)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id           String    @id // Access subject，如 10000000-0000-4000-8000-000000000101
+  username     String? // Access 登录名（preferred_username）
+  email        String?   @unique // Access principal 可能无 email
+  name         String // 显示名（Access displayName）
+  departmentId String?   @map("department_id")
+  role         UserRole  @default(viewer)
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   workspaces    Workspace[]
   questions     Question[]
@@ -186,6 +188,37 @@ model User {
 
   @@schema("cause")
   @@map("users")
+}
+
+/// BFF 会话表：id = SHA-256(不透明会话 token)，明文 token 仅存于 httpOnly cookie
+model AuthSession {
+  id          String    @id // sha256(session token)
+  subject     String // Access subject
+  idleSeconds Int       @default(43200) @map("idle_seconds")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@schema("cause")
+  @@map("auth_sessions")
+  @@index([subject])
+  @@index([expiresAt])
+}
+
+/// OIDC 登录事务表：id = SHA-256(state)；state/nonce/code_verifier 均不落明文
+model OidcTransaction {
+  id        String    @id // sha256(state)
+  nonce     String // 与 ID Token nonce 比对，防重放
+  verifier  String // PKCE code_verifier
+  returnTo  String?   @map("return_to") // 登录成功后回跳的业务页
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  claimedAt DateTime? @map("claimed_at") @db.Timestamptz(3) // 已被 callback 消费
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@schema("cause")
+  @@map("oidc_transactions")
+  @@index([expiresAt])
 }
 
 /// 工作区表：对应 WorkspaceV1

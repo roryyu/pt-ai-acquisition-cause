@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
+import { AccessUnavailableError } from "@/lib/server/auth/access-client";
+import { type Actor, getSessionActor } from "@/lib/server/auth/session";
+
 /**
  * 统一 API 错误类（项目规范 4.5）
  * 三类错误：ApiError（业务） / ZodError（校验） / 未知错误（500）
@@ -42,22 +45,23 @@ export async function readJson<T>(request: Request): Promise<T> {
 }
 
 /**
- * 身份验证桩：当前阶段返回模拟用户
- * 后续迭代接入企业 SSO / next-auth
+ * 身份验证：BFF 会话 → Access principal 复核（60s 缓存，fail-closed）
+ * 未登录/会话失效 → 401（前端 apiFetch 统一跳 /login）；Access 不可达 → 503
  */
-export async function requireActor(_request: Request): Promise<{
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}> {
-  // TODO: 接入 next-auth / 企业 SSO
-  return {
-    id: "user_dev_default",
-    name: "开发用户",
-    email: "dev@example.com",
-    role: "admin",
-  };
+export async function requireActor(request: Request): Promise<Actor> {
+  let actor: Actor | null;
+  try {
+    actor = await getSessionActor(request);
+  } catch (error) {
+    if (error instanceof AccessUnavailableError) {
+      throw new ApiError(503, "ACCESS_UNAVAILABLE", error.message, true);
+    }
+    throw error;
+  }
+  if (!actor) {
+    throw new ApiError(401, "UNAUTHORIZED", "未登录或会话已失效", false);
+  }
+  return actor;
 }
 
 /** 从 URL 查询参数获取分页 */
