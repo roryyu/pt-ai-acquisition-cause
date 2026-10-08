@@ -142,7 +142,7 @@ BIRD 的多重集比较可能更严格，但它改变了协议。本文不据此
 | 对话持久化 | Question.answer、ResearchTask 输入与输出 | 继续用于产品记录，另补细粒度执行轨迹 |
 | 身份认证 | Access/OIDC 和 `requireActor` | 把身份和数据范围传到所有工具 |
 
-证据入口：[workers.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/workers.ts:60)、[model-store.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/semantic/model-store.ts:134)、[data-operators.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/operators/data-operators.ts:130)、[schema.prisma](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/prisma/schema.prisma:294)。
+证据入口：[workers.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/workers.ts:60)、[model-store.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/semantic/model-store.ts:119)、[data-operators.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/operators/data-operators.ts:130)、[schema.prisma](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/prisma/schema.prisma:294)。
 
 ### 4.2 必须先修的具体问题
 
@@ -154,7 +154,7 @@ BIRD 的多重集比较可能更严格，但它改变了协议。本文不据此
 
 **（4）数据分析没有独立的数据校验节点。** 当前数据分析完成后直接进 Synthesizer。Critic 位于研究路径。Prompt 要求异常下钻和真实数值，但没有统一检查比率口径、时间、粒度和贡献守恒。[supervisor.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/supervisor.ts:283)。
 
-**（5）全量字典和模型进入上下文。** Worker 加载全量工具描述和表提示；`semanticContextSummary` 展开全部指标和维度。每次询问一个指标，仍可能为无关数据源付出上下文和探索成本。[workers.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/workers.ts:70)、[tools.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/tools.ts:644)。
+**（5）全量字典和模型进入上下文。** Worker 加载全量模型的工具描述和表提示。每次询问一个指标，仍可能为无关数据源付出上下文和探索成本。[workers.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/workers.ts:61)、[tools.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/tools.ts:644)。
 
 **（6）现有“归因”主要依赖模型组织分析。** anomaly 找异常，aggregate/filter 下钻，transform 计算内置 CPI、CTR、FD 率和 ROI；join 使用固定日汇总与投放计划模型。未发现通用贡献分解或因果估计算子。固定派生指标已使用聚合后比值，应该保留这个正确方向。[prompts.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/agents/prompts.ts:103)、[data-operators.ts](/Users/roryyu/Downloads/code/qoder-app/pt-ai-acquisition-cause/lib/server/operators/data-operators.ts:837)。
 
@@ -196,9 +196,13 @@ flowchart TB
 
 - `ontologyReleaseId` 固定概念、映射、约束和兼容模型快照。
 - `executionProfileHash` 固定模型名、模型参数、Prompt、工具 schema、算子实现版本和预算。
-- `dataSnapshotId` 固定查询所使用的数据修订、提取时间和结果物化信息。
+- `dataSnapshotId` 引用数据快照清单；在线逐步采集后封存，正式评估在运行前冻结完整数据集。
 
 一次问答必须记录三者。只固定语义版本，仍无法排除模型升级和业务数据修订造成的变化。若供应商未暴露模型精确修订，保留请求模型名、时间、供应商和部署 ID，并把回放标为近似可复现。
+
+在线 ReAct 的查询尚未确定，因此启动时只预留 snapshot manifest ID。每次取数登记来源 revision、asOf、请求和响应 artifact，完成后 seal 并计算哈希。seal 保证记录不可变；同一个 ID 本身不保证多次取数来自相同修订。两期比较必须核对 source revision，无法保持一致则标不可比较。
+
+正式评估使用预先物化的只读表、文件或等价数据集。仅保存一组旧响应不足以支持候选发出的新查询；缺完整数据集的案例只能复播历史 artifact，不能计作完整 Agent 重跑实验。
 
 ### 5.3 RunScope 和执行接口
 
@@ -209,6 +213,7 @@ interface RunScope {
   actorId: string;
   workspaceId: string;
   allowedDataSourceIds: readonly string[];
+  authorizationSnapshotId: string;
   resourcePolicyHash: string;
   // 由服务端认证和授权结果产生，不接受客户端自报权限。
 }
@@ -240,6 +245,8 @@ interface ExecutionEnvelope {
 
 `runAgentWorkflow`、Worker、`createRunOperatorTool`、原始 SQL 工具和连接器都接受这个上下文。每个工具内部重新校验资源授权，不能只靠 UI 隐藏数据源。parentQuestionId 历史加载也校验拥有者和工作区。
 
+authorizationSnapshotId 指向不可变的服务端授权记录，包含 metric/object、表列和允许操作；数据源白名单只用于快速筛选。browse、resolve 的依赖展开、compiler、SQL 和 evidence 读取均调用同一 authorizer。每次执行或读取证据时复核当前权限，取“本次固定范围与当前仍获准范围”的交集；权限撤销后停止相关访问，固定快照不能保留已撤销权限。
+
 模型可提交 metric/object ID 和查询参数，不能决定自己拥有哪个数据范围，不能覆盖当前 Run 的版本和快照。
 
 ## 6. 语义层的数据模型
@@ -265,7 +272,9 @@ interface ExecutionEnvelope {
 
 ```typescript
 type FormulaNode =
-  | { op: "sum"; metricId: string }
+  | { op: "aggregate"; function: "sum" | "avg" | "count_rows" | "count_non_null" | "min" | "max"; mappingId: string }
+  | { op: "field"; mappingId: string }
+  | { op: "metric_ref"; objectId: string; revision: number }
   | { op: "divide"; left: FormulaNode; right: FormulaNode }
   | { op: "multiply"; left: FormulaNode; right: FormulaNode }
   | { op: "constant"; value: number };
@@ -278,7 +287,7 @@ interface MetricContract {
   aliases: string[];
   formula: FormulaNode;
   valueKind: "count" | "money" | "ratio" | "duration";
-  aggregation: "additive" | "semi_additive" | "ratio_of_sums" | "distinct";
+  aggregation: "additive" | "semi_additive" | "ratio_of_sums" | "distinct" | "row_only";
   allowedRollupDimensions: string[];
   grain: string[];
   time: {
@@ -299,6 +308,10 @@ interface MetricContract {
 formula 为受限抽象语法树（AST），只允许白名单操作。字符串业务描述不会变成可执行 SQL。编译器统一做白名单字段定位、参数绑定和公式依赖展开。
 
 第一版不支持任意 JavaScript、任意 SQL 函数和复杂用户函数。Distinct 指标只有原始去重键或合法上游结果时才执行；不能把每日 DAU 加总后称为期间独立用户。
+
+兼容 aggregate 节点明确保留现有 avg/count/min/max。avg 只在原始观测或有合法权重时执行；旧 COUNT(column) 映射为 count_non_null，行数使用 count_rows。min/max 保存原聚合规则。legacy agg=none 使用 field 节点和 row_only，禁止 rollup；不支持的类型明确拒绝，迁移不得默认改成 sum。
+
+物理叶子引用 mappingId，派生指标通过 metric_ref 引用具体 revision。编译器检测依赖环和跨范围引用。首期 distinct 在独立验证的原始去重键路径中执行，缺键或只有聚合人数时拒绝；不能把声明 aggregation=distinct 当成已经具备实现。
 
 ### 6.3 必须明确的投放口径
 
@@ -328,7 +341,10 @@ formula 为受限抽象语法树（AST），只允许白名单操作。字符串
 | `ontology_objects` | release_id、object_id、kind、revision、payload、payload_hash；唯一 `(release_id, object_id)`；引用均指向同一 release |
 | `ontology_edges` | release_id、source_id、target_id、type、evidence_ids；两端存在检查和允许类型检查 |
 | `ontology_active` | workspace_id、knowledge_domain、release_id、generation；唯一工作区知识域，发布使用 generation 比较后更新 |
+| `ontology_rollouts` | workspace_id、knowledge_domain、baseline_id、candidate_id、allowed_profile_hashes、traffic_percent、routing_salt、status、generation；表达 shadow/灰度和 profile 回退 |
 | `analysis_runs` | scope、question_id、release_id、profile_hash、snapshot_id、status、started_at、trace_status |
+| `authorization_snapshots` | actor_id、workspace_id、资源与操作规则、policy_hash、创建时间；不可变，执行时与当前权限取交集 |
+| `data_snapshots` / `data_snapshot_members` | collecting/frozen/sealed/not_applicable、source revision/asOf、dataset/response artifact、请求与内容哈希、跨源一致性状态；evaluation 只使用 frozen |
 | `analysis_steps` | run_id、seq、event_id、tool、input_redacted、semantic_refs、output_ref/hash、error_code、elapsed_ms；唯一 `(run_id, seq)` 和 event_id |
 | `analysis_results` | run_id、artifact_id、content/hash、rows、freshness、completeness、data_revision；受数据范围限制读取 |
 | `analysis_claims` | run_id、claim_id、kind、evidence_refs、limitations、validation_result |
@@ -625,7 +641,7 @@ interface SemanticCandidate {
 
 Parent 与 Candidate 在相同数据快照、权限范围、模型配置、Prompt、工具/算子版本和预算下运行。按任务交错 A/B 顺序，缓存策略一致，评估模式禁止执行外部写操作。
 
-数据快照优先使用只读物化表或版本化抽取，绑定 SQL/API 请求、过滤条件、响应哈希和 revision。PostgreSQL 事务快照只能覆盖一次事务，不能单靠事务 ID 在数周后复算。API 无快照能力时，物化同一响应供两边执行；做不到则该案例不计入正式 gate。
+数据快照优先使用只读物化表或版本化抽取，绑定 SQL/API 请求、过滤条件、响应哈希和 revision。PostgreSQL 事务快照只能覆盖一次事务，不能单靠事务 ID 在数周后复算。API 无快照能力时，物化足以支持两份分析计划的完整数据集，或使用覆盖全部允许请求的确定性 fixture；未覆盖请求失败，禁止回源。做不到则该案例不计入正式 gate。无需取数的 direct Run 记 not_applicable。
 
 评估中对父版和候选版各跑 3 次，固定可控 seed。每个 family 先汇总重复结果，再计算配对差值和置信区间。100 个 family 的 3 次运行仍是 100 个独立 family，不能写 N=300。
 
@@ -647,7 +663,7 @@ construction 是候选生成器可读的轨迹。validation 用于受控调参�
 |---|---|
 | 资源访问、核心口径、来源和因果边界 | Parent/Candidate 对应样例不能新增任何关键错误；CriticalError=0 |
 | 确定性校验 | schema、引用、公式、分解守恒和目标契约检查全部通过 |
-| 主指标 | verifiedTaskSuccess 提高至少 3 个百分点，或正确率不降且 online 计费成本至少下降 10% |
+| 主指标 | verifiedTaskSuccess 提高至少 3 个百分点，或满足预先批准的 1 个百分点非劣界且 online 计费成本至少下降 10% |
 | 不确定性 | 按 family 配对 bootstrap 的 95% 区间满足预设非劣界；纯正确率改进建议下界大于 0 |
 | 分组回归 | 每个关键场景单独检查，不允许整体均值掩盖多源/比率/权限错误 |
 | 时延与成本 | token 成本和 p95 在线时延的上升不超过预先批准预算，默认相对 Parent 为 10%/15% |
@@ -656,7 +672,11 @@ construction 是候选生成器可读的轨迹。validation 用于受控调参�
 
 成本路线的非劣界建议是成功率下降不超过 1 个百分点，同时无关键回归。小样本通常无法证明这个边界，应该增加样本或继续影子运行，不得用“没有显著下降”代替“已经非劣”。时延还需采集足够真实请求，100 个离线用例的 p95 只作参考。
 
-`verifiedTaskSuccess = 完整回答且硬校验通过且关键 claims 有证据的 family 数 / 全部评估 family 数`。执行失败和缺失答案进入分母。预期拒绝的案例按 oracle 判断“正确拒绝”，避免奖励一律拒绝，也避免奖励无依据的完整答案。
+计费成本按 family 的重复中位数汇总，并计入模型、SQL/API 和缓存策略。成本路线还要求按 family 重采样的 95% 区间支持至少 10% 的节省；只看到一次低成本结果不能晋升。预算门槛采用预先批准的测量周期，计费单价和缓存折扣一起冻结。
+
+每个 family 运行 3 次，每次按 oracle 判断是否完整且硬校验通过、关键 claims 有证据。主指标采用保守口径：3 次均成功才算该 family 成功；任何一次关键错误进入 CriticalError。成本取三次中位数，再对 family 汇总；同时报告逐次平均成功率作为辅助指标。
+
+`verifiedTaskSuccess = 三次均成功的 family 数 / 全部评估 family 数`。执行失败和缺失答案进入分母。预期拒绝按 oracle 判断“正确拒绝”，避免奖励一律拒绝，也避免奖励无依据的完整答案。
 
 LLM Judge 只评解释覆盖和易读性。若使用 A/B 判决，匿名随机换位并抽样双向评判，遇到不一致转审阅。确定性数值、来源和授权错误不能靠 Judge 赢票消除。Judge 配置、评分 rubric 和版本一起冻结。
 
@@ -690,8 +710,8 @@ runner 从实际执行 artifact 算出成绩。缺 artifact、哈希不匹配、
 1. 以 operationId 校验幂等，锁定 `ontology_active`。
 2. 比较 active release 和 generation 是否仍等于候选的 Parent。
 3. 校验候选冻结内容哈希、兼容 profile、有效评估和审核权限。
-4. 标记不可变 release READY，插入 publication 审计记录。
-5. 同一个数据库事务内更新 active、generation 和发布状态。
+4. 标记不可变 release READY，插入 publication 审计和 shadow/灰度 rollout 记录。
+5. 同一个数据库事务内更新 rollout generation 和发布状态。灰度保留稳定 active；批准全量后，另一个 CAS 事务更新 active 和 generation。
 6. 事务提交后经 outbox 通知缓存失效和后台任务。
 
 创建候选的角色没有 active 表写权限。正式对象不允许覆写；退休对象通过下一版表达。没有通过该服务的“保存并切 active”公共接口。
@@ -700,9 +720,11 @@ runner 从实际执行 artifact 算出成绩。缺 artifact、哈希不匹配、
 
 ### 12.3 灰度和恢复
 
-先在 shadow 模式双跑，结果仅用于比较。然后对授权允许的工作区按稳定 run hash 放量 5%、20%、100%，每步有最低请求量与人工决策。新版本尚未被批准覆盖的模型 profile，继续使用经过验证的 release。
+先在 shadow 模式双跑，结果仅用于比较。然后对授权允许的工作区按稳定 run hash 放量 5%、20%、100%，每步有最低请求量与人工决策。`ontology_rollouts` 保存比例、路由盐值、基线、候选和获准 profile。路由服务先按 profile 和 scope 判断资格，再按 hash 分配；不适用者使用稳定 active。
 
-关键错误出现时立即停止新版本接收新 Run，并通过事务把 active 指向最后一个合格版本。语义回滚不恢复业务原始数据；代码变更使用独立应用版本回滚。已开始的旧 Run 保留原版本和快照，结果标记关联发布状态，避免中途混用。
+Run 启动时记录 rolloutId 和实际 release。灰度结束并获准全量后，用 CAS 将稳定 active 切到候选并关闭 rollout。一个工作区知识域最多一个活动 rollout，避免多个候选同时争抢流量。
+
+关键错误出现时，在事务中禁用 rollout；如果已经全量发布，再把 active 指向最后一个合格版本。语义回滚不恢复业务原始数据；代码变更使用独立应用版本回滚。已开始的旧 Run 保留原版本和快照，结果标记关联发布状态，避免中途混用。
 
 监控发布后的 verified success、口径失败、用户纠错、检索 miss、循环重试、stale/截断和成本。发生故障的 trace 进入专门失败池，不自动修改生产规则“补救”。
 
